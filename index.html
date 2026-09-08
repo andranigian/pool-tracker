@@ -157,7 +157,11 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "
 // distinction actually shows up in the UI.
 function sideLabels(g) {
   if (g.market === "total") {
-    return { favMain: "Over", favSub: "" + (g.spread + 1), dogMain: "Under", dogSub: "" + (g.spread - 1) };
+    // favorite/underdog still hold the real teams for total-market games
+    // (see schema.sql) -- show them here so a player picking Over/Under
+    // can tell which game the total actually refers to.
+    const matchup = g.favorite + " / " + g.underdog;
+    return { favMain: "Over " + (g.spread + 1), favSub: matchup, dogMain: "Under " + (g.spread - 1), dogSub: matchup };
   }
   return { favMain: g.favorite, favSub: "Favorite", dogMain: g.underdog + " +" + g.spread, dogSub: "Underdog" };
 }

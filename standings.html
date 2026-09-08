@@ -186,8 +186,10 @@ function weekPicksTable(picks) {
     // line shown here are derived from the market instead, same idea as
     // index.html's sideLabels().
     const isTotal = p.market === "total";
+    // favorite/underdog hold the real teams even for a total pick -- fold
+    // them into the label so it's clear which game the total belongs to.
     const pickName = isTotal
-      ? (p.side === "favorite" ? "Over " + (p.spread + 1) : "Under " + (p.spread - 1))
+      ? (p.side === "favorite" ? "Over " + (p.spread + 1) : "Under " + (p.spread - 1)) + " (" + p.favorite + "/" + p.underdog + ")"
       : (p.side === "favorite" ? p.favorite : p.underdog);
     // A favorite is MINUS the spread, not plus -- this used to always show
     // "+N" regardless of side, which is only correct for the underdog.
