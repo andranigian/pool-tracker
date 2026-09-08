@@ -16,6 +16,8 @@
   header.top a:hover { text-decoration:underline; }
   .sub { color:#9aa1ac; font-size:.82rem; margin-bottom: 18px; }
   .sub a { color:#9cc0ff; }
+  .week-picker-row { margin-bottom: 10px; display:flex; align-items:center; gap:8px; font-size:.85rem; color:#9aa1ac; }
+  .week-picker-row select { background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:6px; padding:6px 8px; font-size:.85rem; }
   .status { margin: 10px 0; padding:10px 12px; border-radius:6px; font-size:.85rem; line-height:1.4; }
   .status.error { background:#3a1a1a; color:#ff9b9b; }
   .status.ok { background:#123321; color:#8ee6ab; }
@@ -42,6 +44,11 @@
     <a href="/standings">Self-serve standings →</a>
   </header>
   <div class="sub">Picks entered from the paper/roster sheet in <a href="/admin-pool">admin-pool</a> — separate from <a href="/">the self-serve picks page</a> and its own <a href="/standings">standings</a>.</div>
+
+  <div class="week-picker-row">
+    <label for="weekPicker">Week:</label>
+    <select id="weekPicker"><option value="">Loading…</option></select>
+  </div>
 
   <div id="weekLabel" class="status info">Loading…</div>
   <div id="boardWrap"></div>
@@ -195,9 +202,9 @@ function weekPicksTable(picks) {
   return html;
 }
 
-async function loadStandings() {
+async function loadStandings(weekId) {
   try {
-    const res = await fetch(API + "/sheet-standings");
+    const res = await fetch(API + "/sheet-standings" + (weekId ? "?weekId=" + encodeURIComponent(weekId) : ""));
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
     renderBoard(data);
@@ -208,15 +215,51 @@ async function loadStandings() {
   }
 }
 
-(async () => {
-  const data = await loadStandings();
-  if (data && data.week) {
-    const weekRes = await fetch(API + "/week?id=" + encodeURIComponent(data.week.id));
-    const weekData = await weekRes.json();
-    const changed = await refreshScoresFromESPN(data.week, weekData.games || []);
-    if (changed) loadStandings();
+// Populates the "Week:" dropdown from every week ever saved, and keeps it
+// in sync with whichever week is actually on screen (including the one
+// the server picked by default, on first load, before any option here
+// was explicitly chosen).
+let allWeeks = [];
+async function loadWeekPicker(selectedId) {
+  const sel = document.getElementById("weekPicker");
+  try {
+    if (!allWeeks.length) {
+      const res = await fetch(API + "/weeks");
+      const data = await res.json();
+      allWeeks = data.weeks || [];
+    }
+    sel.innerHTML = allWeeks.map(w =>
+      `<option value="${w.id}">Week ${w.week_number}${w.label ? " (" + w.label + ")" : ""}</option>`
+    ).join("");
+  } catch (e) {
+    sel.innerHTML = '<option value="">(couldn\'t load week list)</option>';
   }
-})();
+  if (selectedId) sel.value = selectedId;
+}
+
+// One page load (or one dropdown switch) = load that week's standings,
+// sync the picker and the URL to match, then run the usual ESPN refresh
+// against that week's own games.
+async function showWeek(weekId, opts) {
+  const pushState = opts && opts.pushState;
+  const data = await loadStandings(weekId);
+  if (!data || !data.week) return;
+  await loadWeekPicker(data.week.id);
+  const url = new URL(location.href);
+  if (data.week.id) url.searchParams.set("weekId", data.week.id); else url.searchParams.delete("weekId");
+  if (pushState) history.pushState(null, "", url); else history.replaceState(null, "", url);
+
+  const weekRes = await fetch(API + "/week?id=" + encodeURIComponent(data.week.id));
+  const weekData = await weekRes.json();
+  const changed = await refreshScoresFromESPN(data.week, weekData.games || []);
+  if (changed) loadStandings(data.week.id);
+}
+
+document.getElementById("weekPicker").addEventListener("change", e => {
+  showWeek(e.target.value, { pushState: true });
+});
+
+showWeek(new URLSearchParams(location.search).get("weekId") || undefined);
 </script>
 </body>
 </html>
