@@ -1,6 +1,9 @@
 // functions/api/week.js — GET /api/week?id=2026-w1
-// Public, no auth: the week's games and spreads. Omit ?id for the most
-// recently created week.
+// Public, no auth: the week's games and spreads. Omit ?id for the current
+// week -- the one with the highest (season, week_number), NOT the one
+// most recently inserted (a one-time backfill/migration can insert an
+// older week well after the real current one already exists, which
+// would otherwise hijack "current" from it).
 import { json } from "./_lib.js";
 
 export async function onRequestGet(context) {
@@ -15,7 +18,7 @@ export async function onRequestGet(context) {
     try {
       week = id
         ? await env.PICKS.prepare(`SELECT * FROM weeks WHERE id = ?`).bind(id).first()
-        : await env.PICKS.prepare(`SELECT * FROM weeks ORDER BY created_at DESC LIMIT 1`).first();
+        : await env.PICKS.prepare(`SELECT * FROM weeks ORDER BY season DESC, week_number DESC LIMIT 1`).first();
     } catch (e) {
       console.error("week GET: weeks query failed", String((e && e.message) || e));
       return json({ error: "couldn't read the database" }, 500);

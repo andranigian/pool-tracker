@@ -22,7 +22,7 @@ export async function onRequestGet(context) {
       week = await env.PICKS.prepare(`SELECT id, season, week_number, label, deadline FROM weeks WHERE id = ?`).bind(weekIdParam).first();
       if (!week) return json({ error: "no week found with that id" }, 404);
     } else {
-      week = await env.PICKS.prepare(`SELECT id, season, week_number, label, deadline FROM weeks ORDER BY created_at DESC LIMIT 1`).first();
+      week = await env.PICKS.prepare(`SELECT id, season, week_number, label, deadline FROM weeks ORDER BY season DESC, week_number DESC LIMIT 1`).first();
       if (!week) return json({ week: null, standings: [] });
     }
 
