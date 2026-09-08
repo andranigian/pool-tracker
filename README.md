@@ -136,3 +136,5 @@ whenever you're ready — Pages → Custom domains.
   (`admin/save-week.js`) — a lesson learned the hard way on the hyedad
   version, where a resave used to silently wipe every game's score back
   to "scheduled." This one avoids that from day one.
+
+<!-- redeploy trigger: 2026-09-08T03:45:30Z -->
