@@ -307,7 +307,11 @@ async function loadMyStanding() {
 // ESPN itself and reports raw scores back to /api/refresh, which
 // recomputes who covered from the game's own stored spread.
 function normTeam(s) {
-  return String(s || "").replace(/[.'’]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+  // Hyphens treated as spaces too -- "Louisiana-Monroe" (as typed on the
+  // pool sheet) needs to match ESPN's "Louisiana Monroe" (no hyphen), and
+  // there's no reason a hyphenated team name should ever need to match
+  // literally rather than just word-for-word.
+  return String(s || "").replace(/[.'’]/g, "").replace(/[-\s]+/g, " ").trim().toUpperCase();
 }
 // Pool-sheet team names that don't match any of ESPN's own name fields for
 // that program. Add an entry here whenever a game gets stuck "pending"

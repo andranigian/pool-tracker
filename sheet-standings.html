@@ -57,7 +57,11 @@ const API = "/api";
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 function normTeam(s) {
-  return String(s || "").replace(/[.'’]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+  // Hyphens treated as spaces too -- "Louisiana-Monroe" (as typed on the
+  // pool sheet) needs to match ESPN's "Louisiana Monroe" (no hyphen), and
+  // there's no reason a hyphenated team name should ever need to match
+  // literally rather than just word-for-word.
+  return String(s || "").replace(/[.'’]/g, "").replace(/[-\s]+/g, " ").trim().toUpperCase();
 }
 const TEAM_ALIASES = {
   "MISSISSIPPI": "OLE MISS"
