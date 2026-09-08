@@ -13,23 +13,53 @@ touching each other at all.
 
 ## How it's laid out
 
-- `index.html` — the picks page (`/`). Nickname + PIN, make picks, see your
-  season standing. Scores refresh automatically from ESPN when this page
-  (or the standings page) loads.
-- `standings.html` — public leaderboard (`/standings`).
+- `index.html` — the self-serve picks page (`/`). Nickname + PIN, make
+  picks, see your season standing. Scores refresh automatically from ESPN
+  when this page (or either standings page) loads.
+- `standings.html` — public leaderboard for self-serve picks (`/standings`).
+- `sheet-standings.html` — public leaderboard for picks entered from the
+  paper/roster sheet (`/sheet-standings`) — see "Two separate pools" below.
 - `admin-pool.html` — admin tool (`/admin-pool`), password-gated. Upload
-  the week's `.xlsx` sheet, review the parsed games, save.
+  the week's `.xlsx` games sheet, review the parsed games, save. Also
+  where the weekly roster sheet (everyone's picks, for players who don't
+  use the self-serve page) gets uploaded.
 - `functions/api/` — the backend (Cloudflare Pages Functions):
-  - `week.js`, `standings.js`, `picks.js`, `refresh.js` — public.
+  - `week.js`, `standings.js`, `sheet-standings.js`, `picks.js`,
+    `refresh.js` — public.
   - `admin/login.js`, `admin/logout.js`, `admin/session.js`,
-    `admin/save-week.js`, `admin/parse-sheet.js` — admin-only, gated by
-    a signed cookie issued on password login (see `_lib.js`).
+    `admin/save-week.js`, `admin/parse-sheet.js`, `admin/parse-roster.js`,
+    `admin/save-roster.js` — admin-only, gated by a signed cookie issued
+    on password login (see `_lib.js`).
 - `functions/_vendor/xlsx.bundle.mjs` — the `.xlsx` parser, pre-bundled
   (no build step runs on this Pages project, so a bare `import "xlsx"`
   could never resolve).
-- `schema.sql` — the D1 schema.
+- `schema.sql` — the D1 schema. Safe to re-run any time (every statement
+  is `CREATE TABLE/INDEX IF NOT EXISTS`) — re-running it after pulling a
+  newer version of this repo is how you pick up any new tables, like
+  `roster_picks` below, without touching your existing data.
 - `migrate-week1.sql` — one-time copy of this week's games from the
   hyedad pool (see "Migrating this week's games" below).
+
+## Two separate pools, on purpose
+
+There are two independent ways picks get into this site, and they never
+mix:
+
+- **Self-serve** — a player goes to `/`, picks a nickname + PIN, and
+  enters their own picks directly. Scored on `/standings`. Ranks however
+  many games are on the sheet that week (`players`/`picks` tables).
+- **Sheet/roster** — for players who still hand in picks the old way
+  (paper, text, whatever) instead of using the web page. You collect them
+  into the same roster `.xlsx` format hyedad used and upload it in
+  `/admin-pool`'s "Weekly roster" section; it resolves everyone's picks
+  against that week's saved games and reviews unmatched/duplicate entries
+  before you commit them. Scored separately on `/sheet-standings`. Always
+  the classic 10-pick confidence scale (1-10), matching the paper sheet's
+  own fixed format regardless of how many games are on it.
+
+They're kept in separate tables (`picks` vs `roster_picks`) specifically
+so uploading a roster can never overwrite or collide with someone's
+self-serve picks, even if the same person's nickname shows up in both.
 
 ## One-time setup
 
@@ -117,7 +147,22 @@ whenever you're ready — Pages → Custom domains.
 - Visit `/admin-pool`, sign in with your `ADMIN_PASSWORD`, and either
   upload an `.xlsx` sheet or add games by hand, then save.
 - Visit `/`, pick a nickname + PIN, and make some picks.
-- Visit `/standings` to see the leaderboard.
+- Visit `/standings` to see the self-serve leaderboard.
+- If you're also collecting picks the old way (paper/text), upload that
+  roster sheet in `/admin-pool`'s "Weekly roster" section, then check
+  `/sheet-standings`.
+
+### If you already deployed before this feature existed
+
+Re-run `schema.sql` once to add the new `roster_picks` table — it's
+additive and safe, nothing else in the database is touched:
+
+```
+npx wrangler d1 execute pool-tracker --remote --file=schema.sql
+```
+
+Then redeploy (push a commit, or Deployments → Retry) so the new
+`/admin-pool` roster section and `/sheet-standings` page go live.
 
 ## Notes on the design
 
@@ -136,5 +181,8 @@ whenever you're ready — Pages → Custom domains.
   (`admin/save-week.js`) — a lesson learned the hard way on the hyedad
   version, where a resave used to silently wipe every game's score back
   to "scheduled." This one avoids that from day one.
-
-<!-- redeploy trigger: 2026-09-08T03:45:30Z -->
+- **Sheet/roster picks are a separate table from self-serve picks.** A
+  roster re-upload does a full delete+reinsert of `roster_picks` for that
+  week, same reasoning as `picks.js` (no independently-arrived-at state to
+  preserve there) — but it only ever touches `roster_picks`, never
+  `players`/`picks`, so it can't clobber anyone's self-serve entries.

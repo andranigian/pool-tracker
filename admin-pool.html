@@ -34,7 +34,7 @@
 <body>
 
 <h1>Pool Tracker — Admin</h1>
-<div class="sub">Upload the week's Excel sheet, review/fix the parsed games below, then save. <a href="/" style="color:#9cc0ff">Picks page →</a> · <a href="/standings" style="color:#9cc0ff">Standings →</a></div>
+<div class="sub">Upload the week's Excel sheet, review/fix the parsed games below, then save. <a href="/" style="color:#9cc0ff">Picks page →</a> · <a href="/standings" style="color:#9cc0ff">Standings →</a> · <a href="/sheet-standings" style="color:#9cc0ff">Sheet standings →</a></div>
 
 <div id="loginSection">
   <fieldset>
@@ -95,11 +95,38 @@
   </div>
 
   <div id="statusMsg"></div>
+
+  <fieldset>
+    <legend>Weekly roster — everyone's picks</legend>
+    <div class="hint">For players who don't use the self-serve picks page — upload the roster sheet you collect from them (paper/text/whatever) to build a separate leaderboard at <a href="/sheet-standings" style="color:#9cc0ff">/sheet-standings</a>. Save this week's games first (above) if you haven't already — the roster upload resolves everyone's picks against the games already saved for the Week ID below. This never touches the self-serve picks page or its standings.</div>
+    <label for="rosterWeekId">Week ID</label>
+    <input type="text" id="rosterWeekId">
+    <label for="rosterFile">Roster sheet (.xlsx)</label>
+    <input type="file" id="rosterFile" accept=".xlsx">
+    <button id="parseRosterBtn" type="button">Parse roster</button>
+  </fieldset>
+
+  <div id="rosterReview" style="display:none">
+    <fieldset>
+      <legend>Review — fix anything unmatched before saving</legend>
+      <div id="rosterSummary" class="hint" style="margin-bottom:4px"></div>
+      <div id="rosterNotes" class="hint" style="margin-bottom:8px;color:#e0b34d"></div>
+      <table id="rosterTable">
+        <thead><tr><th class="row-num">#</th><th>Nickname</th><th>Matched</th><th>Unmatched (point → raw #)</th><th>Duplicates (same team, two points)</th></tr></thead>
+        <tbody id="rosterBody"></tbody>
+      </table>
+    </fieldset>
+    <button id="saveRosterBtn" type="button">Save roster for this week</button>
+  </div>
+
+  <div id="rosterStatusMsg"></div>
 </div>
 
 <script>
 const API = "/api";
 let gameRows = [];
+let rosterParticipants = [];
+let rosterSkipped = [];
 
 function setStatus(el, type, msg) {
   el.className = "status " + type;
@@ -196,6 +223,8 @@ async function loadCurrentWeek() {
     setStatus(statusEl, "ok", "Loaded.");
     metaEl.textContent = "Week " + data.week.id + " (" + (data.week.label || "") + ") — deadline " +
       new Date(data.week.deadline).toLocaleString() + " — " + data.games.length + " games";
+    const rosterWeekIdEl = document.getElementById("rosterWeekId");
+    if (rosterWeekIdEl && !rosterWeekIdEl.value) rosterWeekIdEl.value = data.week.id;
     body.innerHTML = "";
     data.games.forEach((g, i) => {
       const tr = document.createElement("tr");
@@ -265,6 +294,98 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
     setStatus(statusEl, "ok", "Saved " + data.gamesSaved + " games for week " + data.weekId + ".");
     loadCurrentWeek();
+  } catch (e) {
+    setStatus(statusEl, "error", "Save failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderRoster() {
+  const body = document.getElementById("rosterBody");
+  const summary = document.getElementById("rosterSummary");
+  body.innerHTML = "";
+  // Unmatched-first so problems are easy to spot in a list of 100+ names.
+  const sorted = [...rosterParticipants].sort((a, b) => b.unmatched.length - a.unmatched.length);
+  sorted.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    const unmatchedText = p.unmatched.length
+      ? p.unmatched.map(u => "pt " + u.points + " → #" + u.raw).join(", ")
+      : "—";
+    const dup = p.duplicates || [];
+    const duplicateText = dup.length
+      ? dup.map(d => "kept " + d.kept + "pt, dropped " + d.dropped + "pt (#" + d.rawNumber + ")").join("; ")
+      : "—";
+    tr.innerHTML = `
+      <td class="row-num">${i + 1}</td>
+      <td>${p.nickname}</td>
+      <td>${p.picks.length} / 10</td>
+      <td style="${p.unmatched.length ? "color:#ff9b9b" : ""}">${unmatchedText}</td>
+      <td style="${dup.length ? "color:#e0b34d" : ""}">${duplicateText}</td>
+    `;
+    body.appendChild(tr);
+  });
+  const unmatchedCount = rosterParticipants.reduce((s, p) => s + p.unmatched.length, 0);
+  const duplicateCount = rosterParticipants.reduce((s, p) => s + (p.duplicates ? p.duplicates.length : 0), 0);
+  summary.textContent = rosterParticipants.length + " participant(s) parsed.";
+
+  const notesEl = document.getElementById("rosterNotes");
+  const notes = [];
+  if (unmatchedCount) notes.push("Note: " + unmatchedCount + " unmatched pick(s) in the table below (highlighted) -- these are simply skipped when you save. Fix the raw number on the source sheet and re-upload if you want them included.");
+  if (duplicateCount) notes.push("Note: " + duplicateCount + " duplicate pick(s) resolved automatically -- same team picked at two point values, the higher one was kept (see the Duplicates column).");
+  if (rosterSkipped.length) notes.push(rosterSkipped.length + " participant(s) skipped entirely, no picks submitted: " + rosterSkipped.join(", ") + ".");
+  notesEl.textContent = notes.join(" ");
+}
+
+document.getElementById("parseRosterBtn").addEventListener("click", async () => {
+  const fileInput = document.getElementById("rosterFile");
+  const weekId = document.getElementById("rosterWeekId").value.trim();
+  const statusEl = document.getElementById("rosterStatusMsg");
+  if (!weekId) { setStatus(statusEl, "error", "Enter a Week ID first (see the games section above, or the viewer at the top)."); return; }
+  if (!fileInput.files[0]) { setStatus(statusEl, "error", "Choose a file first."); return; }
+
+  const btn = document.getElementById("parseRosterBtn");
+  btn.disabled = true;
+  setStatus(statusEl, "info", "Uploading and parsing…");
+  try {
+    const form = new FormData();
+    form.append("sheet", fileInput.files[0]);
+    form.append("weekId", weekId);
+    const res = await fetch(API + "/admin/parse-roster", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+
+    rosterParticipants = data.participants || [];
+    rosterSkipped = data.skipped || [];
+    renderRoster();
+    document.getElementById("rosterReview").style.display = "block";
+    setStatus(statusEl, "ok", "Parsed " + rosterParticipants.length + " participant(s) for week " + data.weekId + ". Ready to save -- see notes below the table for anything that needs a look.");
+  } catch (e) {
+    setStatus(statusEl, "error", "Parse failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("saveRosterBtn").addEventListener("click", async () => {
+  const weekId = document.getElementById("rosterWeekId").value.trim();
+  const statusEl = document.getElementById("rosterStatusMsg");
+  const btn = document.getElementById("saveRosterBtn");
+  btn.disabled = true;
+  setStatus(statusEl, "info", "Saving…");
+  try {
+    const payload = {
+      weekId,
+      participants: rosterParticipants.map(p => ({ nickname: p.nickname, picks: p.picks }))
+    };
+    const res = await fetch(API + "/admin/save-roster", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+    setStatus(statusEl, "ok", "Saved " + data.participantsSaved + " participant(s), " + data.picksSaved + " picks, for week " + data.weekId + ".");
   } catch (e) {
     setStatus(statusEl, "error", "Save failed: " + e.message);
   } finally {

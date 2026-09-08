@@ -56,3 +56,23 @@ CREATE TABLE IF NOT EXISTS picks (
 );
 CREATE INDEX IF NOT EXISTS idx_picks_week   ON picks(week_id);
 CREATE INDEX IF NOT EXISTS idx_picks_player ON picks(player_id);
+
+-- Everyone's picks entered from the paper/roster sheet uploaded in
+-- /admin-pool (see admin/parse-roster.js, admin/save-roster.js), for
+-- players who don't use the self-serve picks page above. Deliberately
+-- separate from players/picks -- no PIN, no player row, just the
+-- nickname text as it appears on the sheet -- so this can never collide
+-- with someone using the self-serve flow under a similar-looking name.
+-- See sheet-standings.js for how these get scored and shown, on their
+-- own standings page, kept apart from the self-serve leaderboard.
+CREATE TABLE IF NOT EXISTS roster_picks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_id    TEXT NOT NULL REFERENCES weeks(id),
+  nickname   TEXT NOT NULL,
+  game_id    INTEGER NOT NULL REFERENCES games(id),
+  side       TEXT NOT NULL,                    -- 'favorite' | 'underdog'
+  points     INTEGER NOT NULL,                 -- confidence value, 1-10 (the sheet's own fixed scale)
+  UNIQUE(week_id, nickname, game_id),           -- can't pick the same game twice
+  UNIQUE(week_id, nickname, points)             -- can't reuse the same point value twice in a week
+);
+CREATE INDEX IF NOT EXISTS idx_roster_picks_week ON roster_picks(week_id);

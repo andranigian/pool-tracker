@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Standings — Pool Tracker</title>
-<meta name="description" content="Live leaderboard for the weekly confidence pool — everyone's picks, scored automatically as games finish.">
+<title>Sheet Standings — Pool Tracker</title>
+<meta name="description" content="Leaderboard for picks entered from the paper/roster sheet, scored automatically as games finish.">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin:0; font-family:-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#0f1115; color:#e6e8eb; }
   .wrap { max-width: 820px; margin: 0 auto; padding: 20px 16px 60px; }
-  header.top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 18px; }
+  header.top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 10px; }
   header.top h1 { font-size:1.2rem; margin:0; }
   header.top a { color:#9cc0ff; font-size:.82rem; text-decoration:none; }
   header.top a:hover { text-decoration:underline; }
+  .sub { color:#9aa1ac; font-size:.82rem; margin-bottom: 18px; }
+  .sub a { color:#9cc0ff; }
   .status { margin: 10px 0; padding:10px 12px; border-radius:6px; font-size:.85rem; line-height:1.4; }
   .status.error { background:#3a1a1a; color:#ff9b9b; }
   .status.ok { background:#123321; color:#8ee6ab; }
@@ -21,7 +23,6 @@
   table.board { width:100%; border-collapse:collapse; margin-top:10px; font-size:.88rem; }
   table.board th, table.board td { border:1px solid #2a2e37; padding:8px 10px; text-align:left; }
   table.board th { color:#9aa1ac; font-weight:600; background:#151821; }
-  table.board tr.me { background:#152040; }
   .rank { color:#9aa1ac; width:36px; }
   .pending-tag { color:#e0b34d; font-size:.75rem; }
   details.week-picks summary { cursor:pointer; color:#9cc0ff; font-size:.8rem; }
@@ -37,15 +38,16 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <h1>🎯 Pool Tracker — Standings</h1>
-    <a href="/">Make your picks →</a>
+    <h1>📋 Pool Tracker — Sheet Standings</h1>
+    <a href="/standings">Self-serve standings →</a>
   </header>
+  <div class="sub">Picks entered from the paper/roster sheet in <a href="/admin-pool">admin-pool</a> — separate from <a href="/">the self-serve picks page</a> and its own <a href="/standings">standings</a>.</div>
 
   <div id="weekLabel" class="status info">Loading…</div>
   <div id="boardWrap"></div>
 
   <footer>
-    Scores refresh automatically from ESPN as games finish. Admin: <a href="/admin-pool">admin-pool →</a> · Sheet standings: <a href="/sheet-standings">sheet-standings →</a>
+    Scores refresh automatically from ESPN as games finish. Admin: <a href="/admin-pool">admin-pool →</a>
   </footer>
 </div>
 
@@ -141,7 +143,7 @@ function renderBoard(data) {
   labelEl.textContent = "Week " + data.week.weekNumber + " (" + (data.week.label || "") + ") — deadline " + new Date(data.week.deadline).toLocaleString();
 
   if (!data.standings.length) {
-    wrap.innerHTML = '<div class="status info">No picks yet for this week — be the first at <a href="/" style="color:#9cc0ff">the picks page</a>.</div>';
+    wrap.innerHTML = '<div class="status info">No sheet roster uploaded yet for this week — see <a href="/admin-pool" style="color:#9cc0ff">admin-pool</a>.</div>';
     return;
   }
 
@@ -173,7 +175,7 @@ function weekPicksTable(picks) {
 
 async function loadStandings() {
   try {
-    const res = await fetch(API + "/standings");
+    const res = await fetch(API + "/sheet-standings");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
     renderBoard(data);
