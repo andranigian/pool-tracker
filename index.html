@@ -317,7 +317,8 @@ function normTeam(s) {
 // that program. Add an entry here whenever a game gets stuck "pending"
 // forever because the sheet's name and ESPN's name just don't overlap.
 const TEAM_ALIASES = {
-  "MISSISSIPPI": "OLE MISS" // ESPN calls Ole Miss by location "Ole Miss", not "Mississippi"
+  "MISSISSIPPI": "OLE MISS", // ESPN calls Ole Miss by location "Ole Miss", not "Mississippi"
+  "LOUISIANA MONROE": "UL MONROE" // ESPN calls them "UL Monroe", not "Louisiana Monroe"
 };
 function lookupTeam(index, name) {
   const key = normTeam(name);

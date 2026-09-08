@@ -64,7 +64,8 @@ function normTeam(s) {
   return String(s || "").replace(/[.'’]/g, "").replace(/[-\s]+/g, " ").trim().toUpperCase();
 }
 const TEAM_ALIASES = {
-  "MISSISSIPPI": "OLE MISS"
+  "MISSISSIPPI": "OLE MISS", // ESPN calls Ole Miss by location "Ole Miss", not "Mississippi"
+  "LOUISIANA MONROE": "UL MONROE" // ESPN calls them "UL Monroe", not "Louisiana Monroe"
 };
 function lookupTeam(index, name) {
   const key = normTeam(name);
