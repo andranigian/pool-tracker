@@ -222,11 +222,18 @@ function updateBar() {
   const complete = Object.values(myPicks).filter(p => p.points != null).length;
   document.getElementById("picksCount").textContent = complete + " / " + maxPoints() + " picked";
   document.getElementById("submitBtn").disabled = deadlinePassed || complete === 0 || !getNickname();
+  // The point VALUES here are trivially 10..1 once all ten are used --
+  // not useful on their own. What's actually useful to see at a glance is
+  // which GAME got which rank, highest confidence first.
   const entries = Object.entries(myPicks)
     .filter(([, p]) => p.points != null)
     .sort((a, b) => b[1].points - a[1].points);
   document.getElementById("picksNumberLine").textContent = entries.length
-    ? entries.map(([, p]) => p.points).join(" ") : "";
+    ? entries.map(([gameId, p]) => {
+        const g = games.find(x => String(x.id) === String(gameId));
+        return p.points + ":" + (g ? "#" + g.sheetNumber : "?");
+      }).join("  ")
+    : "";
 }
 
 async function loadWeek() {
