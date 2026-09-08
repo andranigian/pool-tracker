@@ -46,16 +46,18 @@ There are two independent ways picks get into this site, and they never
 mix:
 
 - **Self-serve** — a player goes to `/`, picks a nickname + PIN, and
-  enters their own picks directly. Scored on `/standings`. Ranks however
-  many games are on the sheet that week (`players`/`picks` tables).
+  enters their own picks directly. Scored on `/standings`. Same 1-10
+  confidence scale as the paper sheet (`players`/`picks` tables) --
+  picking any 10 of whatever games are on the sheet that week, not
+  ranking every single one of them.
 - **Sheet/roster** — for players who still hand in picks the old way
   (paper, text, whatever) instead of using the web page. You collect them
   into the same roster `.xlsx` format hyedad used and upload it in
   `/admin-pool`'s "Weekly roster" section; it resolves everyone's picks
   against that week's saved games and reviews unmatched/duplicate entries
-  before you commit them. Scored separately on `/sheet-standings`. Always
-  the classic 10-pick confidence scale (1-10), matching the paper sheet's
-  own fixed format regardless of how many games are on it.
+  before you commit them. Scored separately on `/sheet-standings`. Same
+  classic 10-pick confidence scale (1-10), matching the paper sheet's own
+  fixed format regardless of how many games are on it.
 
 They're kept in separate tables (`picks` vs `roster_picks`) specifically
 so uploading a roster can never overwrite or collide with someone's

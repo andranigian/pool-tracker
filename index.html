@@ -129,7 +129,11 @@ document.getElementById("nickname").addEventListener("change", () => {
 function usedPoints() {
   return new Set(Object.values(myPicks).map(p => p.points).filter(p => p != null));
 }
-function maxPoints() { return games.length; }
+// Fixed 1-10 confidence scale, same as the roster/paper-sheet upload --
+// not "rank every game on the sheet" (which used to be games.length, back
+// when a typical week had ~10 games; that stopped making sense once a
+// week can have 50+ with over/unders and early games included).
+function maxPoints() { return Math.min(10, games.length); }
 function nextAutoPoint() {
   const used = usedPoints();
   for (let n = maxPoints(); n >= 1; n--) if (!used.has(n)) return n;

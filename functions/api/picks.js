@@ -83,7 +83,7 @@ export async function onRequestPost(context) {
       const gameId = parseInt(p.gameId, 10);
       const points = parseInt(p.points, 10);
       const side = p.side === "favorite" || p.side === "underdog" ? p.side : null;
-      if (!validGameIds.has(gameId) || !side || !Number.isFinite(points) || points < 1) continue;
+      if (!validGameIds.has(gameId) || !side || !Number.isFinite(points) || points < 1 || points > 10) continue;
       if (seenGames.has(gameId) || seenPoints.has(points)) continue; // same game or same point value twice -- keep the first, drop the rest
       seenGames.add(gameId);
       seenPoints.add(points);
