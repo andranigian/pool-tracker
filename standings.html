@@ -190,7 +190,9 @@ function weekPicksTable(picks) {
     // them into the label so it's clear which game the total belongs to.
     const pickName = isTotal
       ? (p.side === "favorite" ? "Over " + (p.spread + 1) : "Under " + (p.spread - 1)) + " (" + p.favorite + "/" + p.underdog + ")"
-      : (p.side === "favorite" ? p.favorite : p.underdog);
+      // Show the opponent too -- "Los Angeles Rams" alone doesn't say who
+      // they're playing; favorite/underdog are always both on the row.
+      : (p.side === "favorite" ? p.favorite + " (vs " + p.underdog + ")" : p.underdog + " (vs " + p.favorite + ")");
     // A favorite is MINUS the spread, not plus -- this used to always show
     // "+N" regardless of side, which is only correct for the underdog.
     const lineText = isTotal ? "O/U " + (p.spread - 1) + "/" + (p.spread + 1)
