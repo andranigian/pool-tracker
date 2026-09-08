@@ -1,0 +1,5 @@
+{
+  "name": "pool-tracker",
+  "private": true,
+  "_note": "No build step runs on this Pages project -- deploy just uploads the static files and functions/ as-is. The xlsx parser used by admin/parse-sheet.js is pre-bundled locally instead -- see functions/_vendor/xlsx.bundle.mjs. This file exists only as a record; it has no effect on the deploy."
+}

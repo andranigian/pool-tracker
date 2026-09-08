@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Standings — Pool Tracker</title>
+<meta name="description" content="Live leaderboard for the weekly confidence pool — everyone's picks, scored automatically as games finish.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#0f1115; color:#e6e8eb; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 20px 16px 60px; }
+  header.top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 18px; }
+  header.top h1 { font-size:1.2rem; margin:0; }
+  header.top a { color:#9cc0ff; font-size:.82rem; text-decoration:none; }
+  header.top a:hover { text-decoration:underline; }
+  .status { margin: 10px 0; padding:10px 12px; border-radius:6px; font-size:.85rem; line-height:1.4; }
+  .status.error { background:#3a1a1a; color:#ff9b9b; }
+  .status.ok { background:#123321; color:#8ee6ab; }
+  .status.info { background:#1a2233; color:#9cc0ff; }
+  table.board { width:100%; border-collapse:collapse; margin-top:10px; font-size:.88rem; }
+  table.board th, table.board td { border:1px solid #2a2e37; padding:8px 10px; text-align:left; }
+  table.board th { color:#9aa1ac; font-weight:600; background:#151821; }
+  table.board tr.me { background:#152040; }
+  .rank { color:#9aa1ac; width:36px; }
+  .pending-tag { color:#e0b34d; font-size:.75rem; }
+  details.week-picks summary { cursor:pointer; color:#9cc0ff; font-size:.8rem; }
+  table.week { width:100%; border-collapse:collapse; margin:8px 0 4px; font-size:.8rem; }
+  table.week th, table.week td { border:1px solid #2a2e37; padding:5px 7px; text-align:left; }
+  .result-win { color:#8ee6ab; }
+  .result-loss { color:#ff9b9b; }
+  .result-pending { color:#9aa1ac; }
+  footer { text-align:center; color:#6b7280; font-size:.75rem; margin-top:30px; }
+  footer a { color:#9cc0ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>🎯 Pool Tracker — Standings</h1>
+    <a href="/">Make your picks →</a>
+  </header>
+
+  <div id="weekLabel" class="status info">Loading…</div>
+  <div id="boardWrap"></div>
+
+  <footer>
+    Scores refresh automatically from ESPN as games finish. Admin: <a href="/admin-pool">admin-pool →</a>
+  </footer>
+</div>
+
+<script>
+const API = "/api";
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function normTeam(s) {
+  return String(s || "").replace(/[.'’]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+const TEAM_ALIASES = {
+  "MISSISSIPPI": "OLE MISS"
+};
+function lookupTeam(index, name) {
+  const key = normTeam(name);
+  return index.get(key) || (TEAM_ALIASES[key] && index.get(TEAM_ALIASES[key]));
+}
+
+async function refreshScoresFromESPN(week, games) {
+  try {
+    const pending = games.filter(g => g.status !== "final" && g.status !== "cancelled");
+    if (!pending.length) return false;
+
+    const now = new Date();
+    const start = new Date(now); start.setUTCDate(start.getUTCDate() - 4);
+    const end = new Date(now); end.setUTCDate(end.getUTCDate() + 1);
+    const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, "");
+    const dateRange = fmt(start) + "-" + fmt(end);
+
+    const espnResults = await Promise.all([
+      fetch("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=" + dateRange + "&limit=300"),
+      fetch("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=" + dateRange + "&limit=100")
+    ]);
+    const events = [];
+    for (const res of espnResults) {
+      if (!res.ok) continue;
+      const data = await res.json();
+      events.push(...(data.events || []));
+    }
+    if (!events.length) return false;
+
+    const index = new Map();
+    for (const ev of events) {
+      const comp = ev.competitions && ev.competitions[0];
+      if (!comp) continue;
+      for (const c of comp.competitors || []) {
+        const t = c.team || {};
+        for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name]) {
+          if (variant) index.set(normTeam(variant), { competition: comp, competitor: c });
+        }
+      }
+    }
+
+    const updates = [];
+    for (const g of pending) {
+      const fav = lookupTeam(index, g.favorite);
+      const dog = lookupTeam(index, g.underdog);
+      if (!fav || !dog || fav.competition !== dog.competition) continue;
+      const statusType = fav.competition.status.type;
+      updates.push({
+        gameId: g.id,
+        favScore: parseFloat(fav.competitor.score) || 0,
+        dogScore: parseFloat(dog.competitor.score) || 0,
+        completed: !!statusType.completed,
+        inProgress: statusType.state === "in"
+      });
+    }
+    if (!updates.length) return false;
+
+    await fetch(API + "/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates })
+    });
+    return true;
+  } catch (e) {
+    console.warn("refreshScoresFromESPN:", e.message);
+    return false;
+  }
+}
+
+function renderBoard(data) {
+  const labelEl = document.getElementById("weekLabel");
+  const wrap = document.getElementById("boardWrap");
+  if (!data.week) {
+    labelEl.className = "status info";
+    labelEl.textContent = "No pool week is open right now.";
+    wrap.innerHTML = "";
+    return;
+  }
+  labelEl.className = "status ok";
+  labelEl.textContent = "Week " + data.week.weekNumber + " (" + (data.week.label || "") + ") — deadline " + new Date(data.week.deadline).toLocaleString();
+
+  if (!data.standings.length) {
+    wrap.innerHTML = '<div class="status info">No picks yet for this week — be the first at <a href="/" style="color:#9cc0ff">the picks page</a>.</div>';
+    return;
+  }
+
+  let html = '<table class="board"><thead><tr><th class="rank">#</th><th>Name</th><th>Season</th><th>This week</th><th></th></tr></thead><tbody>';
+  data.standings.forEach(s => {
+    html += `<tr>
+      <td class="rank">${s.rank}</td>
+      <td>${esc(s.displayName)}</td>
+      <td>${s.seasonTotal}${s.seasonPending ? ' <span class="pending-tag">(pending)</span>' : ""}</td>
+      <td>${s.weekPending ? '<span class="pending-tag">in progress</span>' : s.weekTotal}</td>
+      <td>${s.weekPicks.length ? '<details class="week-picks"><summary>picks</summary>' + weekPicksTable(s.weekPicks) + '</details>' : ""}</td>
+    </tr>`;
+  });
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+}
+
+function weekPicksTable(picks) {
+  const sorted = [...picks].sort((a, b) => b.points - a.points);
+  let html = '<table class="week"><thead><tr><th>Pts</th><th>Pick</th><th>Spread</th><th>Result</th></tr></thead><tbody>';
+  sorted.forEach(p => {
+    const pickName = p.side === "favorite" ? p.favorite : p.underdog;
+    const resultText = p.result === "pending" ? "pending" : (p.result === "win" ? "won (+" + p.earned + ")" : "lost");
+    html += `<tr><td>${p.points}</td><td>${esc(pickName)}</td><td>+${p.spread}</td><td class="result-${p.result}">${resultText}</td></tr>`;
+  });
+  html += "</tbody></table>";
+  return html;
+}
+
+async function loadStandings() {
+  try {
+    const res = await fetch(API + "/standings");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    renderBoard(data);
+    return data;
+  } catch (e) {
+    document.getElementById("weekLabel").className = "status error";
+    document.getElementById("weekLabel").textContent = "Couldn't load standings: " + e.message;
+  }
+}
+
+(async () => {
+  const data = await loadStandings();
+  if (data && data.week) {
+    const weekRes = await fetch(API + "/week?id=" + encodeURIComponent(data.week.id));
+    const weekData = await weekRes.json();
+    const changed = await refreshScoresFromESPN(data.week, weekData.games || []);
+    if (changed) loadStandings();
+  }
+})();
+</script>
+</body>
+</html>

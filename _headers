@@ -1,0 +1,5 @@
+/admin-pool
+  X-Robots-Tag: noindex, nofollow
+
+/api/*
+  Cache-Control: no-store

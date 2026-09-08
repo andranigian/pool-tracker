@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Pool Admin — Pool Tracker</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, system-ui, sans-serif; background:#0f1115; color:#e6e8eb; max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; }
+  .sub { color:#9aa1ac; font-size:.85rem; margin-bottom: 24px; }
+  fieldset { border: 1px solid #2a2e37; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+  legend { padding: 0 6px; color:#c9cdd4; }
+  label { display:block; font-size:.8rem; color:#9aa1ac; margin: 10px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:6px; padding:8px; font-size:.9rem; }
+  button { background:#3b6ef6; color:#fff; border:0; border-radius:6px; padding:10px 16px; font-size:.9rem; cursor:pointer; margin-top:10px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.secondary { background:#2a2e37; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:.85rem; }
+  th, td { border:1px solid #2a2e37; padding:6px 8px; text-align:left; }
+  th { color:#9aa1ac; font-weight:600; }
+  td input { padding:5px; font-size:.85rem; }
+  .row-num { color:#6b7280; width:32px; }
+  .status { margin-top:14px; padding:10px 12px; border-radius:6px; font-size:.85rem; white-space:pre-wrap; }
+  .status.error { background:#3a1a1a; color:#ff9b9b; }
+  .status.ok { background:#123321; color:#8ee6ab; }
+  .status.info { background:#1a2233; color:#9cc0ff; }
+  #gamesSection, #appSection { display:none; }
+  .hint { color:#6b7280; font-size:.75rem; }
+  #logoutBtn { float:right; }
+</style>
+</head>
+<body>
+
+<h1>Pool Tracker — Admin</h1>
+<div class="sub">Upload the week's Excel sheet, review/fix the parsed games below, then save. <a href="/" style="color:#9cc0ff">Picks page →</a> · <a href="/standings" style="color:#9cc0ff">Standings →</a></div>
+
+<div id="loginSection">
+  <fieldset>
+    <legend>Sign in</legend>
+    <label for="password">Admin password</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <button id="loginBtn">Sign in</button>
+    <div id="loginStatus" class="status" style="display:none"></div>
+  </fieldset>
+</div>
+
+<div id="appSection">
+  <button id="logoutBtn" class="secondary" type="button">Sign out</button>
+
+  <fieldset>
+    <legend>Currently saved week (live from the database)</legend>
+    <div id="viewerStatus" class="status info">Loading…</div>
+    <div id="viewerMeta" class="hint" style="margin-top:8px"></div>
+    <table id="viewerTable" style="display:none">
+      <thead><tr><th class="row-num">#</th><th>Day</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th>Status</th></tr></thead>
+      <tbody id="viewerBody"></tbody>
+    </table>
+  </fieldset>
+
+  <fieldset>
+    <legend>1. Upload sheet</legend>
+    <label for="sheetFile">This week's pool sheet (.xlsx)</label>
+    <input type="file" id="sheetFile" accept=".xlsx">
+    <button id="parseBtn">Parse sheet</button>
+    <div class="hint">This just reads the file and guesses the games — nothing is saved yet.</div>
+  </fieldset>
+
+  <div id="gamesSection" class="fieldset-wrap">
+    <fieldset>
+      <legend>2. Week details</legend>
+      <label for="weekId">Week ID (e.g. 2026-w1)</label>
+      <input type="text" id="weekId">
+      <label for="season">Season year</label>
+      <input type="number" id="season">
+      <label for="weekNumber">Week number</label>
+      <input type="number" id="weekNumber">
+      <label for="label">Label</label>
+      <input type="text" id="label" value="College Football">
+      <label for="deadline">Picks deadline</label>
+      <input type="datetime-local" id="deadline">
+    </fieldset>
+
+    <fieldset>
+      <legend>3. Games — review and fix anything wrong before saving</legend>
+      <table id="gamesTable">
+        <thead><tr><th class="row-num">#</th><th>Day</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th></th></tr></thead>
+        <tbody id="gamesBody"></tbody>
+      </table>
+      <button id="addRowBtn" class="secondary" type="button">+ Add game</button>
+    </fieldset>
+
+    <button id="saveBtn">Save this week to the database</button>
+  </div>
+
+  <div id="statusMsg"></div>
+</div>
+
+<script>
+const API = "/api";
+let gameRows = [];
+
+function setStatus(el, type, msg) {
+  el.className = "status " + type;
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+async function checkSession() {
+  try {
+    const res = await fetch(API + "/admin/session");
+    const data = await res.json();
+    if (data.authenticated) {
+      document.getElementById("loginSection").style.display = "none";
+      document.getElementById("appSection").style.display = "block";
+      loadCurrentWeek();
+    }
+  } catch (e) {}
+}
+
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("loginStatus");
+  const password = document.getElementById("password").value;
+  if (!password) { setStatus(statusEl, "error", "Enter the password."); return; }
+  try {
+    const res = await fetch(API + "/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+    document.getElementById("loginSection").style.display = "none";
+    document.getElementById("appSection").style.display = "block";
+    loadCurrentWeek();
+  } catch (e) {
+    setStatus(statusEl, "error", e.message);
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  await fetch(API + "/admin/logout", { method: "POST" });
+  document.getElementById("appSection").style.display = "none";
+  document.getElementById("loginSection").style.display = "block";
+  document.getElementById("password").value = "";
+});
+
+function renderGames() {
+  const body = document.getElementById("gamesBody");
+  body.innerHTML = "";
+  gameRows.forEach((g, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="row-num">${i + 1}</td>
+      <td><input data-i="${i}" data-f="dayLabel" value="${g.dayLabel || ""}"></td>
+      <td><input data-i="${i}" data-f="favorite" value="${g.favorite || ""}"></td>
+      <td><input data-i="${i}" data-f="underdog" value="${g.underdog || ""}"></td>
+      <td><input data-i="${i}" data-f="spread" value="${g.spread ?? ""}" style="width:70px"></td>
+      <td><button data-i="${i}" class="secondary removeBtn" type="button">✕</button></td>
+    `;
+    body.appendChild(tr);
+  });
+  body.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("input", e => {
+      const i = +e.target.dataset.i, f = e.target.dataset.f;
+      gameRows[i][f] = e.target.value;
+    });
+  });
+  body.querySelectorAll(".removeBtn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      gameRows.splice(+e.target.dataset.i, 1);
+      renderGames();
+    });
+  });
+}
+
+document.getElementById("addRowBtn").addEventListener("click", () => {
+  gameRows.push({ sheetNumber: gameRows.length + 1, dayLabel: "", favorite: "", underdog: "", spread: "" });
+  renderGames();
+});
+
+async function loadCurrentWeek() {
+  const statusEl = document.getElementById("viewerStatus");
+  const metaEl = document.getElementById("viewerMeta");
+  const table = document.getElementById("viewerTable");
+  const body = document.getElementById("viewerBody");
+  try {
+    const res = await fetch(API + "/week");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    if (!data.week) {
+      setStatus(statusEl, "info", "No week saved yet.");
+      return;
+    }
+    setStatus(statusEl, "ok", "Loaded.");
+    metaEl.textContent = "Week " + data.week.id + " (" + (data.week.label || "") + ") — deadline " +
+      new Date(data.week.deadline).toLocaleString() + " — " + data.games.length + " games";
+    body.innerHTML = "";
+    data.games.forEach((g, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="row-num">${i + 1}</td><td>-</td><td>${g.favorite}</td><td>${g.underdog}</td><td>+${g.spread}</td><td>${g.status}</td>`;
+      body.appendChild(tr);
+    });
+    table.style.display = data.games.length ? "table" : "none";
+  } catch (e) {
+    setStatus(statusEl, "error", "Couldn't load: " + e.message);
+  }
+}
+
+document.getElementById("parseBtn").addEventListener("click", async () => {
+  const fileInput = document.getElementById("sheetFile");
+  const statusEl = document.getElementById("statusMsg");
+  if (!fileInput.files[0]) { setStatus(statusEl, "error", "Choose a file first."); return; }
+
+  const btn = document.getElementById("parseBtn");
+  btn.disabled = true;
+  setStatus(statusEl, "info", "Uploading and parsing…");
+
+  try {
+    const form = new FormData();
+    form.append("sheet", fileInput.files[0]);
+    const res = await fetch(API + "/admin/parse-sheet", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+
+    gameRows = data.games || [];
+    if (data.weekNumberGuess) document.getElementById("weekNumber").value = data.weekNumberGuess;
+    if (data.seasonGuess) document.getElementById("season").value = data.seasonGuess;
+    if (data.seasonGuess && data.weekNumberGuess) {
+      document.getElementById("weekId").value = data.seasonGuess + "-w" + data.weekNumberGuess;
+    }
+    renderGames();
+    document.getElementById("gamesSection").style.display = "block";
+    setStatus(statusEl, gameRows.length ? "ok" : "error",
+      gameRows.length ? ("Parsed " + gameRows.length + " games — check every row below before saving.")
+                       : "Couldn't find any games automatically — use \"+ Add game\" to enter them by hand.");
+  } catch (e) {
+    setStatus(statusEl, "error", "Parse failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("statusMsg");
+  const week = {
+    id: document.getElementById("weekId").value.trim(),
+    season: document.getElementById("season").value,
+    weekNumber: document.getElementById("weekNumber").value,
+    label: document.getElementById("label").value.trim(),
+    deadline: document.getElementById("deadline").value ? new Date(document.getElementById("deadline").value).toISOString() : ""
+  };
+
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  setStatus(statusEl, "info", "Saving…");
+  try {
+    const res = await fetch(API + "/admin/save-week", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ week, games: gameRows })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+    setStatus(statusEl, "ok", "Saved " + data.gamesSaved + " games for week " + data.weekId + ".");
+    loadCurrentWeek();
+  } catch (e) {
+    setStatus(statusEl, "error", "Save failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+checkSession();
+</script>
+</body>
+</html>

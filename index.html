@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pool Tracker — Weekly Confidence Pool Picks</title>
+<meta name="description" content="Make your weekly confidence-pool picks — no sign-in, just a nickname and a PIN. Scores update automatically as games finish.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#0f1115; color:#e6e8eb; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 80px; }
+  header.top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 18px; }
+  header.top h1 { font-size:1.2rem; margin:0; }
+  header.top a { color:#9cc0ff; font-size:.82rem; text-decoration:none; }
+  header.top a:hover { text-decoration:underline; }
+  fieldset { border: 1px solid #2a2e37; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  legend { padding: 0 6px; color:#c9cdd4; font-size:.85rem; }
+  label { display:block; font-size:.78rem; color:#9aa1ac; margin: 8px 0 4px; }
+  input { width: 100%; box-sizing: border-box; background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:6px; padding:9px 10px; font-size:.95rem; }
+  .id-row { display:flex; gap:10px; }
+  .id-row > div { flex:1; }
+  button { background:#3b6ef6; color:#fff; border:0; border-radius:6px; padding:10px 16px; font-size:.9rem; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.secondary { background:#2a2e37; }
+  .status { margin: 10px 0; padding:10px 12px; border-radius:6px; font-size:.85rem; line-height:1.4; }
+  .status.error { background:#3a1a1a; color:#ff9b9b; }
+  .status.ok { background:#123321; color:#8ee6ab; }
+  .status.info { background:#1a2233; color:#9cc0ff; }
+  .status.warn { background:#332a13; color:#e0b34d; }
+  .day-header { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#7d8695; margin: 16px 0 6px; }
+  .game-row { display:grid; grid-template-columns: 1fr 1fr 60px; gap:8px; align-items:stretch; margin-bottom:8px; }
+  .side-btn { background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:8px; padding:10px 10px; text-align:left; font-size:.88rem; line-height:1.3; cursor:pointer; }
+  .side-btn small { display:block; color:#7d8695; font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+  .side-btn.selected { border-color:#3b6ef6; background:#152040; }
+  .points-select, select.points-select { width:60px; background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:6px; text-align:center; font-size:.9rem; }
+  .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 14px 0; position:sticky; bottom:0; background:#0f1115; padding:10px 0; border-top:1px solid #2a2e37; }
+  #picksCount { font-size:.85rem; color:#9aa1ac; }
+  #picksNumberLine { font-size:.72rem; color:#6b7280; margin-top:2px; }
+  table.history { width:100%; border-collapse:collapse; margin-top:10px; font-size:.85rem; }
+  table.history th, table.history td { border:1px solid #2a2e37; padding:6px 8px; text-align:left; }
+  table.history th { color:#9aa1ac; font-weight:600; }
+  .result-win { color:#8ee6ab; }
+  .result-loss { color:#ff9b9b; }
+  .result-pending { color:#9aa1ac; }
+  #seasonTotal { font-size:.95rem; margin-bottom:6px; }
+  footer { text-align:center; color:#6b7280; font-size:.75rem; margin-top:30px; }
+  footer a { color:#9cc0ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>🎯 Pool Tracker</h1>
+    <a href="/standings">See the live standings →</a>
+  </header>
+
+  <fieldset>
+    <legend>You</legend>
+    <div class="id-row">
+      <div>
+        <label for="nickname">Nickname</label>
+        <input type="text" id="nickname" autocomplete="off" placeholder="e.g. Zmer">
+      </div>
+      <div>
+        <label for="pin">PIN (4-8 digits)</label>
+        <input type="password" id="pin" inputmode="numeric" autocomplete="off" placeholder="only needed to save">
+      </div>
+    </div>
+    <div class="hint" style="color:#6b7280;font-size:.72rem;margin-top:6px">First time with this nickname? Whatever PIN you type now becomes yours — you'll need it to change these picks later. Nobody else can see your picks change without it.</div>
+  </fieldset>
+
+  <div id="weekStatus" class="status info">Loading this week…</div>
+
+  <div id="gamesList"></div>
+
+  <div class="bar">
+    <div>
+      <div id="picksCount">0 / 0 picked</div>
+      <div id="picksNumberLine"></div>
+    </div>
+    <button id="submitBtn" disabled>Save my picks</button>
+  </div>
+
+  <fieldset>
+    <legend>Your standing</legend>
+    <div id="standingStatus" class="status info">Enter your nickname above to see it.</div>
+  </fieldset>
+
+  <footer>
+    Scores refresh automatically from ESPN as games finish. Admin: <a href="/admin-pool">admin-pool →</a>
+  </footer>
+</div>
+
+<script>
+const API = "/api";
+let currentWeek = null;
+let games = [];
+let myPicks = {}; // gameId -> { side, points }
+let deadlinePassed = false;
+
+function setStatus(el, type, msg) {
+  el.className = "status " + type;
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+function normalizePlayerId(nickname) {
+  return String(nickname || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function getNickname() { return document.getElementById("nickname").value.trim(); }
+function getPin() { return document.getElementById("pin").value.trim(); }
+
+// Remember the nickname (not the PIN) across visits, purely for
+// convenience -- the PIN is always typed fresh before saving.
+(function restoreNickname() {
+  try {
+    const saved = localStorage.getItem("pt-nickname");
+    if (saved) document.getElementById("nickname").value = saved;
+  } catch (e) {}
+})();
+document.getElementById("nickname").addEventListener("change", () => {
+  try { localStorage.setItem("pt-nickname", getNickname()); } catch (e) {}
+  loadMyPicks();
+  loadMyStanding();
+});
+
+function usedPoints() {
+  return new Set(Object.values(myPicks).map(p => p.points).filter(p => p != null));
+}
+function maxPoints() { return games.length; }
+function nextAutoPoint() {
+  const used = usedPoints();
+  for (let n = maxPoints(); n >= 1; n--) if (!used.has(n)) return n;
+  return null;
+}
+function pointOptions(currentValue) {
+  const used = usedPoints();
+  const opts = ['<option value="">–</option>'];
+  for (let n = maxPoints(); n >= 1; n--) {
+    if (n === currentValue || !used.has(n)) opts.push(`<option value="${n}" ${n === currentValue ? "selected" : ""}>${n}</option>`);
+  }
+  return opts.join("");
+}
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function renderGames() {
+  const list = document.getElementById("gamesList");
+  list.innerHTML = "";
+  let lastDay = null;
+  games.forEach(g => {
+    if (g.dayLabel && g.dayLabel !== lastDay) {
+      const h = document.createElement("div");
+      h.className = "day-header";
+      h.textContent = g.dayLabel;
+      list.appendChild(h);
+      lastDay = g.dayLabel;
+    }
+    const pick = myPicks[g.id];
+    const row = document.createElement("div");
+    row.className = "game-row";
+    row.innerHTML = `
+      <button class="side-btn ${pick && pick.side === "favorite" ? "selected" : ""}" data-game="${g.id}" data-side="favorite">
+        ${esc(g.favorite)}<small>Favorite</small>
+      </button>
+      <button class="side-btn ${pick && pick.side === "underdog" ? "selected" : ""}" data-game="${g.id}" data-side="underdog">
+        ${esc(g.underdog)} +${g.spread}<small>Underdog</small>
+      </button>
+      <select class="points-select" data-game="${g.id}" ${!pick ? "disabled" : ""}>${pointOptions(pick && pick.points)}</select>
+    `;
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll(".side-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (deadlinePassed) return;
+      const gameId = btn.dataset.game;
+      const side = btn.dataset.side;
+      const existing = myPicks[gameId];
+      if (existing && existing.side === side) {
+        delete myPicks[gameId];
+      } else if (existing) {
+        myPicks[gameId] = { side, points: existing.points };
+      } else {
+        myPicks[gameId] = { side, points: nextAutoPoint() };
+      }
+      renderGames();
+      updateBar();
+    });
+  });
+  list.querySelectorAll(".points-select").forEach(sel => {
+    sel.addEventListener("change", () => {
+      const gameId = sel.dataset.game;
+      const val = sel.value ? parseInt(sel.value, 10) : null;
+      if (myPicks[gameId]) myPicks[gameId].points = val;
+      renderGames();
+      updateBar();
+    });
+  });
+}
+
+function updateBar() {
+  const complete = Object.values(myPicks).filter(p => p.points != null).length;
+  document.getElementById("picksCount").textContent = complete + " / " + maxPoints() + " picked";
+  document.getElementById("submitBtn").disabled = deadlinePassed || complete === 0 || !getNickname();
+  const entries = Object.entries(myPicks)
+    .filter(([, p]) => p.points != null)
+    .sort((a, b) => b[1].points - a[1].points);
+  document.getElementById("picksNumberLine").textContent = entries.length
+    ? entries.map(([, p]) => p.points).join(" ") : "";
+}
+
+async function loadWeek() {
+  const weekStatus = document.getElementById("weekStatus");
+  try {
+    const res = await fetch(API + "/week");
+    const data = await res.json();
+    if (!res.ok || !data.week) { setStatus(weekStatus, "info", "No pool week is open right now — check back once the admin posts one."); games = []; renderGames(); updateBar(); return; }
+    currentWeek = data.week;
+    games = data.games.map(g => ({ id: g.id, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, dayLabel: null }));
+
+    deadlinePassed = Date.now() > Date.parse(currentWeek.deadline);
+    setStatus(weekStatus, deadlinePassed ? "warn" : "ok",
+      "Week " + currentWeek.week_number + " (" + (currentWeek.label || "") + ") — deadline " +
+      new Date(currentWeek.deadline).toLocaleString() + (deadlinePassed ? " — picks are locked" : ""));
+
+    renderGames();
+    updateBar();
+  } catch (e) {
+    setStatus(weekStatus, "error", "Couldn't load this week: " + e.message);
+  }
+}
+
+async function loadMyPicks() {
+  const nickname = getNickname();
+  if (!nickname || !currentWeek) return;
+  try {
+    const res = await fetch(API + "/picks?player=" + encodeURIComponent(nickname) + "&weekId=" + encodeURIComponent(currentWeek.id));
+    if (!res.ok) return;
+    const data = await res.json();
+    myPicks = {};
+    (data.picks || []).forEach(p => { myPicks[p.game_id] = { side: p.side, points: p.points }; });
+    renderGames();
+    updateBar();
+  } catch (e) {}
+}
+
+document.getElementById("submitBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("submitBtn");
+  const weekStatus = document.getElementById("weekStatus");
+  const nickname = getNickname();
+  const pin = getPin();
+  if (!nickname) { setStatus(weekStatus, "error", "Enter a nickname first."); return; }
+  if (!/^\d{4,8}$/.test(pin)) { setStatus(weekStatus, "error", "Enter your PIN (4-8 digits) to save."); return; }
+
+  const picks = Object.entries(myPicks)
+    .filter(([, p]) => p.points != null)
+    .map(([gameId, p]) => ({ gameId: parseInt(gameId, 10), side: p.side, points: p.points }));
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + "/picks", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nickname, pin, weekId: currentWeek.id, picks })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+    setStatus(weekStatus, "ok", "Saved " + data.picksSaved + " picks for week " + currentWeek.week_number + ".");
+    try { localStorage.setItem("pt-nickname", nickname); } catch (e) {}
+    loadMyStanding();
+  } catch (e) {
+    setStatus(weekStatus, "error", "Couldn't save: " + e.message);
+  } finally {
+    updateBar();
+  }
+});
+
+async function loadMyStanding() {
+  const el = document.getElementById("standingStatus");
+  const nickname = getNickname();
+  if (!nickname) { setStatus(el, "info", "Enter your nickname above to see it."); return; }
+  try {
+    const res = await fetch(API + "/standings");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    const playerId = normalizePlayerId(nickname);
+    const mine = (data.standings || []).find(s => s.playerId === playerId);
+    if (!mine) { setStatus(el, "info", "No picks saved yet for \"" + nickname + "\" — make your first ones above."); return; }
+    el.className = "status ok";
+    let html = "Rank <strong>#" + mine.rank + "</strong> of " + data.standings.length +
+      " — season total <strong>" + mine.seasonTotal + "</strong>" + (mine.seasonPending ? " (some games still pending)" : "") + "<br>" +
+      "This week: " + (mine.weekPending ? "in progress" : mine.weekTotal + " pts");
+    el.innerHTML = html;
+    el.style.display = "block";
+  } catch (e) {
+    setStatus(el, "error", "Couldn't load your standing: " + e.message);
+  }
+}
+
+// ==================== LIVE SCORE REFRESH FROM ESPN ====================
+// Same approach as the hyedad version of this pool: Cloudflare Workers get
+// a flat 403 calling ESPN directly (their bot protection blocks Workers'
+// outbound IPs, not the request shape), so a visitor's browser fetches
+// ESPN itself and reports raw scores back to /api/refresh, which
+// recomputes who covered from the game's own stored spread.
+function normTeam(s) {
+  return String(s || "").replace(/[.'’]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+// Pool-sheet team names that don't match any of ESPN's own name fields for
+// that program. Add an entry here whenever a game gets stuck "pending"
+// forever because the sheet's name and ESPN's name just don't overlap.
+const TEAM_ALIASES = {
+  "MISSISSIPPI": "OLE MISS" // ESPN calls Ole Miss by location "Ole Miss", not "Mississippi"
+};
+function lookupTeam(index, name) {
+  const key = normTeam(name);
+  return index.get(key) || (TEAM_ALIASES[key] && index.get(TEAM_ALIASES[key]));
+}
+
+async function refreshScoresFromESPN() {
+  try {
+    if (!currentWeek) return;
+    const pending = games.filter(g => g.status !== "final" && g.status !== "cancelled");
+    if (!pending.length) return;
+
+    const now = new Date();
+    const start = new Date(now); start.setUTCDate(start.getUTCDate() - 4);
+    const end = new Date(now); end.setUTCDate(end.getUTCDate() + 1);
+    const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, "");
+    const dateRange = fmt(start) + "-" + fmt(end);
+
+    const espnResults = await Promise.all([
+      fetch("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=" + dateRange + "&limit=300"),
+      fetch("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=" + dateRange + "&limit=100")
+    ]);
+    const events = [];
+    for (const res of espnResults) {
+      if (!res.ok) continue;
+      const data = await res.json();
+      events.push(...(data.events || []));
+    }
+    if (!events.length) return;
+
+    const index = new Map();
+    for (const ev of events) {
+      const comp = ev.competitions && ev.competitions[0];
+      if (!comp) continue;
+      for (const c of comp.competitors || []) {
+        const t = c.team || {};
+        for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name]) {
+          if (variant) index.set(normTeam(variant), { competition: comp, competitor: c });
+        }
+      }
+    }
+
+    const updates = [];
+    for (const g of pending) {
+      const fav = lookupTeam(index, g.favorite);
+      const dog = lookupTeam(index, g.underdog);
+      if (!fav || !dog || fav.competition !== dog.competition) continue;
+      const statusType = fav.competition.status.type;
+      updates.push({
+        gameId: g.id,
+        favScore: parseFloat(fav.competitor.score) || 0,
+        dogScore: parseFloat(dog.competitor.score) || 0,
+        completed: !!statusType.completed,
+        inProgress: statusType.state === "in"
+      });
+    }
+    if (!updates.length) return;
+
+    await fetch(API + "/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ updates })
+    });
+  } catch (e) {
+    console.warn("refreshScoresFromESPN:", e.message);
+  }
+}
+
+(async () => {
+  await loadWeek();
+  await refreshScoresFromESPN();
+  await loadWeek(); // pick up anything refresh just wrote
+  loadMyPicks();
+  loadMyStanding();
+})();
+</script>
+</body>
+</html>
