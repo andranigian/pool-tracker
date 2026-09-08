@@ -74,12 +74,18 @@ function lookupTeam(index, name) {
 
 async function refreshScoresFromESPN(week, games) {
   try {
-    const pending = games.filter(g => g.status !== "final" && g.status !== "cancelled");
+    // A final game with a score already never needs refetching; a final
+    // game WITHOUT one yet (finished before fav_score/dog_score existed)
+    // still needs one round trip so its score can display.
+    const pending = games.filter(g => g.status !== "cancelled" && (g.status !== "final" || g.fav_score == null || g.dog_score == null));
     if (!pending.length) return false;
 
-    const now = new Date();
-    const start = new Date(now); start.setUTCDate(start.getUTCDate() - 4);
-    const end = new Date(now); end.setUTCDate(end.getUTCDate() + 1);
+    // Centered on the week's own deadline, not "now" -- so refreshing an
+    // old week (to backfill a score) still lands ESPN's date window on the
+    // games that were actually played that week.
+    const center = week && week.deadline ? new Date(week.deadline) : new Date();
+    const start = new Date(center); start.setUTCDate(start.getUTCDate() - 5);
+    const end = new Date(center); end.setUTCDate(end.getUTCDate() + 4);
     const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, "");
     const dateRange = fmt(start) + "-" + fmt(end);
 

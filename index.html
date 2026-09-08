@@ -219,7 +219,7 @@ async function loadWeek() {
     const data = await res.json();
     if (!res.ok || !data.week) { setStatus(weekStatus, "info", "No pool week is open right now — check back once the admin posts one."); games = []; renderGames(); updateBar(); return; }
     currentWeek = data.week;
-    games = data.games.map(g => ({ id: g.id, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, dayLabel: null }));
+    games = data.games.map(g => ({ id: g.id, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
 
     deadlinePassed = Date.now() > Date.parse(currentWeek.deadline);
     setStatus(weekStatus, deadlinePassed ? "warn" : "ok",
@@ -328,12 +328,18 @@ function lookupTeam(index, name) {
 async function refreshScoresFromESPN() {
   try {
     if (!currentWeek) return;
-    const pending = games.filter(g => g.status !== "final" && g.status !== "cancelled");
+    // A final game with a score already never needs refetching; a final
+    // game WITHOUT one yet (finished before fav_score/dog_score existed)
+    // still needs one round trip so its score can display.
+    const pending = games.filter(g => g.status !== "cancelled" && (g.status !== "final" || g.favScore == null || g.dogScore == null));
     if (!pending.length) return;
 
-    const now = new Date();
-    const start = new Date(now); start.setUTCDate(start.getUTCDate() - 4);
-    const end = new Date(now); end.setUTCDate(end.getUTCDate() + 1);
+    // Centered on the week's own deadline, not "now" -- so refreshing an
+    // old week (to backfill a score) still lands ESPN's date window on the
+    // games that were actually played that week.
+    const center = currentWeek && currentWeek.deadline ? new Date(currentWeek.deadline) : new Date();
+    const start = new Date(center); start.setUTCDate(start.getUTCDate() - 5);
+    const end = new Date(center); end.setUTCDate(end.getUTCDate() + 4);
     const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, "");
     const dateRange = fmt(start) + "-" + fmt(end);
 

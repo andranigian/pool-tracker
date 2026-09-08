@@ -36,19 +36,29 @@ export async function onRequestPost(context) {
 
     const placeholders = ids.map(() => "?").join(",");
     const gamesRes = await env.PICKS.prepare(
-      `SELECT id, spread, status, fav_score, dog_score FROM games WHERE id IN (${placeholders}) AND status NOT IN ('final','cancelled')`
+      `SELECT id, spread, status, fav_score, dog_score FROM games WHERE id IN (${placeholders}) AND status != 'cancelled'`
     ).bind(...ids).all();
-    const pending = new Map((gamesRes.results || []).map(g => [g.id, g]));
+    const byId = new Map((gamesRes.results || []).map(g => [g.id, g]));
 
     const writes = [];
     for (const u of updates) {
       const gameId = parseInt(u.gameId, 10);
-      const game = pending.get(gameId);
+      const game = byId.get(gameId);
       if (!game) continue;
 
       const favScore = Number(u.favScore);
       const dogScore = Number(u.dogScore);
       if (!Number.isFinite(favScore) || !Number.isFinite(dogScore) || favScore < 0 || dogScore < 0) continue;
+
+      if (game.status === "final") {
+        // Status/winner_side are permanent once final -- this branch only
+        // backfills the raw score for display, for a game that finished
+        // before fav_score/dog_score existed. Already has one? Nothing to do.
+        if (game.fav_score == null || game.dog_score == null) {
+          writes.push(env.PICKS.prepare(`UPDATE games SET fav_score = ?, dog_score = ? WHERE id = ?`).bind(favScore, dogScore, gameId));
+        }
+        continue;
+      }
 
       let newStatus = "scheduled";
       if (u.completed) newStatus = "final";
