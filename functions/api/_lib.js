@@ -52,7 +52,7 @@ async function hmacHex(keyText, message) {
 // ==================== PLAYERS (nickname + PIN) ====================
 
 // Normalizes a nickname to its lookup key: trimmed, lowercased, internal
-// whitespace collapsed. "Zmer" and " zmer  " land on the same player row;
+// whitespace collapsed. "Paul" and " paul  " land on the same player row;
 // display_name keeps whatever casing was actually typed.
 export function normalizePlayerId(nickname) {
   return String(nickname || "").trim().replace(/\s+/g, " ").toLowerCase();

@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_games_week ON games(week_id);
 
 -- One row per nickname, ever (not per week) -- the same nickname carries
 -- across weeks so season totals accumulate. `id` is the normalized
--- (trimmed, lowercased) lookup key so "Zmer" and "zmer" collide instead of
+-- (trimmed, lowercased) lookup key so "Paul" and "paul" collide instead of
 -- silently splitting one person's season total into two rows; `display_name`
 -- keeps whatever casing they actually typed, for showing in standings.
 CREATE TABLE IF NOT EXISTS players (
