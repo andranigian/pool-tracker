@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS games (
   spread       REAL NOT NULL,                    -- points the underdog gets
   status       TEXT NOT NULL DEFAULT 'scheduled', -- scheduled | in_progress | final | cancelled
   winner_side  TEXT,                              -- 'favorite' | 'underdog' | 'push' | NULL until final
+  fav_score    INTEGER,                            -- favorite's raw score, set by refresh.js -- NULL until any score is known
+  dog_score    INTEGER,                            -- underdog's raw score, same timing as fav_score
   UNIQUE(week_id, sheet_number)
 );
 CREATE INDEX IF NOT EXISTS idx_games_week ON games(week_id);

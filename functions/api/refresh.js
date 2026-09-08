@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
 
     const placeholders = ids.map(() => "?").join(",");
     const gamesRes = await env.PICKS.prepare(
-      `SELECT id, spread, status FROM games WHERE id IN (${placeholders}) AND status NOT IN ('final','cancelled')`
+      `SELECT id, spread, status, fav_score, dog_score FROM games WHERE id IN (${placeholders}) AND status NOT IN ('final','cancelled')`
     ).bind(...ids).all();
     const pending = new Map((gamesRes.results || []).map(g => [g.id, g]));
 
@@ -53,7 +53,11 @@ export async function onRequestPost(context) {
       let newStatus = "scheduled";
       if (u.completed) newStatus = "final";
       else if (u.inProgress) newStatus = "in_progress";
-      if (newStatus === game.status) continue;
+      // Scores can tick up during the same in_progress status (a later
+      // fetch mid-game reports a higher score), so write whenever either
+      // the status or a score actually changed -- not just on a status
+      // transition -- otherwise a mid-game update never sticks.
+      if (newStatus === game.status && favScore === game.fav_score && dogScore === game.dog_score) continue;
 
       let winnerSide = null;
       if (newStatus === "final") {
@@ -61,7 +65,8 @@ export async function onRequestPost(context) {
         winnerSide = favMargin > game.spread ? "favorite" : favMargin < game.spread ? "underdog" : "push";
       }
       writes.push(
-        env.PICKS.prepare(`UPDATE games SET status = ?, winner_side = ? WHERE id = ?`).bind(newStatus, winnerSide, gameId)
+        env.PICKS.prepare(`UPDATE games SET status = ?, winner_side = ?, fav_score = ?, dog_score = ? WHERE id = ?`)
+          .bind(newStatus, winnerSide, favScore, dogScore, gameId)
       );
     }
 

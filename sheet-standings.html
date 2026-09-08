@@ -168,11 +168,14 @@ function renderBoard(data) {
 
 function weekPicksTable(picks) {
   const sorted = [...picks].sort((a, b) => b.points - a.points);
-  let html = '<table class="week"><thead><tr><th>Pts</th><th>Pick</th><th>Spread</th><th>Result</th></tr></thead><tbody>';
+  let html = '<table class="week"><thead><tr><th>Pts</th><th>Pick</th><th>Spread</th><th>Score</th><th>Result</th></tr></thead><tbody>';
   sorted.forEach(p => {
     const pickName = p.side === "favorite" ? p.favorite : p.underdog;
     const resultText = p.result === "pending" ? "pending" : (p.result === "win" ? "won (+" + p.earned + ")" : "lost");
-    html += `<tr><td>${p.points}</td><td>${esc(pickName)}</td><td>+${p.spread}</td><td class="result-${p.result}">${resultText}</td></tr>`;
+    // Always favorite-then-underdog, regardless of which side was picked --
+    // same fixed order the Favorite/Underdog columns use everywhere else.
+    const scoreText = p.favScore != null && p.dogScore != null ? p.favScore + "–" + p.dogScore : "—";
+    html += `<tr><td>${p.points}</td><td>${esc(pickName)}</td><td>+${p.spread}</td><td>${scoreText}</td><td class="result-${p.result}">${resultText}</td></tr>`;
   });
   html += "</tbody></table>";
   return html;

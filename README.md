@@ -164,6 +164,24 @@ npx wrangler d1 execute pool-tracker --remote --file=schema.sql
 Then redeploy (push a commit, or Deployments → Retry) so the new
 `/admin-pool` roster section and `/sheet-standings` page go live.
 
+### If you already deployed before scores were shown on picks
+
+`schema.sql` adds two new columns (`fav_score`, `dog_score`) to the
+`games` table for a brand-new database, but `CREATE TABLE IF NOT EXISTS`
+is a no-op on a table that already exists — an existing database needs
+these added by hand, once:
+
+```
+npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN fav_score INTEGER"
+npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN dog_score INTEGER"
+```
+
+Scores backfill automatically from there on the next ESPN refresh for any
+game still in progress or not yet final; anything already `final` before
+this ran won't have a score until its `winner_side` gets touched again
+(a manual fix like the ones above rewrites it, or just leave it -- it
+only affects the cosmetic score column, not scoring).
+
 ## Notes on the design
 
 - **No CORS needed.** Because this is one domain serving both the pages
@@ -186,3 +204,8 @@ Then redeploy (push a commit, or Deployments → Retry) so the new
   week, same reasoning as `picks.js` (no independently-arrived-at state to
   preserve there) — but it only ever touches `roster_picks`, never
   `players`/`picks`, so it can't clobber anyone's self-serve entries.
+- **Raw scores are stored, not just win/loss.** `games.fav_score`/
+  `dog_score` are written by `refresh.js` alongside `status`/`winner_side`
+  purely so the standings pages can show the actual score next to each
+  pick — the pool's scoring itself only ever depends on `winner_side`,
+  computed the same way it always was.

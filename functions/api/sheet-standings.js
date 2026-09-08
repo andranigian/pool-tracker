@@ -29,6 +29,7 @@ export async function onRequestGet(context) {
     const res = await env.PICKS.prepare(
       `SELECT rp.nickname, rp.week_id, w.season, w.week_number, w.label,
               g.sheet_number, g.favorite, g.underdog, g.spread, g.status, g.winner_side,
+              g.fav_score, g.dog_score,
               rp.side, rp.points
        FROM roster_picks rp
        JOIN weeks w ON w.id = rp.week_id
@@ -71,6 +72,7 @@ export async function onRequestGet(context) {
       if (r.week_id === week.id) {
         n.weekPicks.push({
           sheetNumber: r.sheet_number, favorite: r.favorite, underdog: r.underdog, spread: r.spread,
+          favScore: r.fav_score, dogScore: r.dog_score,
           side: r.side, points: r.points, result, earned
         });
       }
