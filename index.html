@@ -146,6 +146,18 @@ function pointOptions(currentValue) {
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+// market='total' games are an over/under on a real game's combined score,
+// not two teams -- favorite/underdog still hold that real game's actual
+// teams under the hood (see parse-sheet.js), but the picker should see
+// "Over/Under <line>", not the team names, so this is the one place that
+// distinction actually shows up in the UI.
+function sideLabels(g) {
+  if (g.market === "total") {
+    return { favMain: "Over", favSub: "" + (g.spread + 1), dogMain: "Under", dogSub: "" + (g.spread - 1) };
+  }
+  return { favMain: g.favorite, favSub: "Favorite", dogMain: g.underdog + " +" + g.spread, dogSub: "Underdog" };
+}
+
 function renderGames() {
   const list = document.getElementById("gamesList");
   list.innerHTML = "";
@@ -161,12 +173,13 @@ function renderGames() {
     const pick = myPicks[g.id];
     const row = document.createElement("div");
     row.className = "game-row";
+    const labels = sideLabels(g);
     row.innerHTML = `
       <button class="side-btn ${pick && pick.side === "favorite" ? "selected" : ""}" data-game="${g.id}" data-side="favorite">
-        ${esc(g.favorite)}<small>Favorite</small>
+        ${esc(labels.favMain)}<small>${esc(labels.favSub)}</small>
       </button>
       <button class="side-btn ${pick && pick.side === "underdog" ? "selected" : ""}" data-game="${g.id}" data-side="underdog">
-        ${esc(g.underdog)} +${g.spread}<small>Underdog</small>
+        ${esc(labels.dogMain)}<small>${esc(labels.dogSub)}</small>
       </button>
       <select class="points-select" data-game="${g.id}" ${!pick ? "disabled" : ""}>${pointOptions(pick && pick.points)}</select>
     `;
@@ -219,7 +232,7 @@ async function loadWeek() {
     const data = await res.json();
     if (!res.ok || !data.week) { setStatus(weekStatus, "info", "No pool week is open right now — check back once the admin posts one."); games = []; renderGames(); updateBar(); return; }
     currentWeek = data.week;
-    games = data.games.map(g => ({ id: g.id, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
+    games = data.games.map(g => ({ id: g.id, market: g.market, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
 
     deadlinePassed = Date.now() > Date.parse(currentWeek.deadline);
     setStatus(weekStatus, deadlinePassed ? "warn" : "ok",

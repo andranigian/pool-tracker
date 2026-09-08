@@ -54,7 +54,7 @@
     <div id="viewerStatus" class="status info">Loading…</div>
     <div id="viewerMeta" class="hint" style="margin-top:8px"></div>
     <table id="viewerTable" style="display:none">
-      <thead><tr><th class="row-num">#</th><th>Day</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th>Status</th></tr></thead>
+      <thead><tr><th class="row-num">#</th><th>Day</th><th>Market</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th>Status</th></tr></thead>
       <tbody id="viewerBody"></tbody>
     </table>
   </fieldset>
@@ -85,9 +85,10 @@
     <fieldset>
       <legend>3. Games — review and fix anything wrong before saving</legend>
       <table id="gamesTable">
-        <thead><tr><th class="row-num">#</th><th>Day</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th></th></tr></thead>
+        <thead><tr><th class="row-num">#</th><th>Day</th><th>Market</th><th>Favorite</th><th>Underdog</th><th>Spread</th><th></th></tr></thead>
         <tbody id="gamesBody"></tbody>
       </table>
+      <div class="hint">"total" = an over/under — Favorite/Underdog here are still the real teams (needed to fetch the score from ESPN), and Spread is the line's midpoint (so 45 for an "under 44 / over 46" line). Fix the midpoint here if a total's line ever isn't a clean 2-point gap.</div>
       <button id="addRowBtn" class="secondary" type="button">+ Add game</button>
     </fieldset>
 
@@ -178,9 +179,16 @@ function renderGames() {
   body.innerHTML = "";
   gameRows.forEach((g, i) => {
     const tr = document.createElement("tr");
+    const market = g.market === "total" ? "total" : "spread";
     tr.innerHTML = `
       <td class="row-num">${i + 1}</td>
       <td><input data-i="${i}" data-f="dayLabel" value="${g.dayLabel || ""}"></td>
+      <td>
+        <select data-i="${i}" data-f="market">
+          <option value="spread" ${market === "spread" ? "selected" : ""}>spread</option>
+          <option value="total" ${market === "total" ? "selected" : ""}>total</option>
+        </select>
+      </td>
       <td><input data-i="${i}" data-f="favorite" value="${g.favorite || ""}"></td>
       <td><input data-i="${i}" data-f="underdog" value="${g.underdog || ""}"></td>
       <td><input data-i="${i}" data-f="spread" value="${g.spread ?? ""}" style="width:70px"></td>
@@ -188,7 +196,7 @@ function renderGames() {
     `;
     body.appendChild(tr);
   });
-  body.querySelectorAll("input").forEach(inp => {
+  body.querySelectorAll("input, select").forEach(inp => {
     inp.addEventListener("input", e => {
       const i = +e.target.dataset.i, f = e.target.dataset.f;
       gameRows[i][f] = e.target.value;
@@ -203,7 +211,7 @@ function renderGames() {
 }
 
 document.getElementById("addRowBtn").addEventListener("click", () => {
-  gameRows.push({ sheetNumber: gameRows.length + 1, dayLabel: "", favorite: "", underdog: "", spread: "" });
+  gameRows.push({ sheetNumber: gameRows.length + 1, market: "spread", dayLabel: "", favorite: "", underdog: "", spread: "" });
   renderGames();
 });
 
@@ -228,7 +236,8 @@ async function loadCurrentWeek() {
     body.innerHTML = "";
     data.games.forEach((g, i) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td class="row-num">${i + 1}</td><td>-</td><td>${g.favorite}</td><td>${g.underdog}</td><td>+${g.spread}</td><td>${g.status}</td>`;
+      const marketText = g.market === "total" ? "O/U " + (g.spread - 1) + "/" + (g.spread + 1) : "spread";
+      tr.innerHTML = `<td class="row-num">${i + 1}</td><td>-</td><td>${marketText}</td><td>${g.favorite}</td><td>${g.underdog}</td><td>+${g.spread}</td><td>${g.status}</td>`;
       body.appendChild(tr);
     });
     table.style.display = data.games.length ? "table" : "none";

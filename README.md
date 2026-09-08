@@ -169,7 +169,8 @@ Then redeploy (push a commit, or Deployments → Retry) so the new
 `schema.sql` adds two new columns (`fav_score`, `dog_score`) to the
 `games` table for a brand-new database, but `CREATE TABLE IF NOT EXISTS`
 is a no-op on a table that already exists — an existing database needs
-these added by hand, once:
+these added by hand, once (same non-issue applies to the `market` column
+added for over/under picks below):
 
 ```
 npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN fav_score INTEGER"
@@ -177,10 +178,57 @@ npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD C
 ```
 
 Scores backfill automatically from there on the next ESPN refresh for any
-game still in progress or not yet final; anything already `final` before
-this ran won't have a score until its `winner_side` gets touched again
-(a manual fix like the ones above rewrites it, or just leave it -- it
-only affects the cosmetic score column, not scoring).
+game still in progress or not yet final -- including one already
+`final`, as long as it's still missing a score; nothing about scoring
+itself changes, this only fills in the cosmetic score column.
+
+### If you already deployed before over/under picks existed
+
+`schema.sql` adds a `market` column to `games` for a brand-new database
+-- an existing database needs it added by hand too, once:
+
+```
+npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN market TEXT NOT NULL DEFAULT 'spread'"
+```
+
+Every existing game defaults to `'spread'` (unaffected); the next games
+sheet you upload will parse over/under rows as `market='total'` on its
+own from there.
+
+## Over/under picks
+
+Some pool sheets carry a "total" prop -- UNDER/OVER on a game's combined
+score -- alongside the normal favorite-vs-underdog spread. These are
+supported as a second `market` on `games` (`'spread'` or `'total'`),
+picked exactly like any other game (same 1-N confidence scale, same
+`side: 'favorite'|'underdog'` shape in the API) but scored and displayed
+differently:
+
+- **Parsing** (`admin/parse-sheet.js`): a row whose "team" names are
+  literally UNDER/OVER is attributed to the most recent real spread game
+  above it on the sheet (that's how these sheets lay them out --
+  immediately under their own game). `favorite`/`underdog` are stored as
+  that real game's actual teams, not the strings "Over"/"Under" -- so the
+  same ESPN score lookup (by team name) that spread games use works
+  unchanged for totals too. `spread` stores the midpoint of the sheet's
+  two printed lines (e.g. "under 44 / over 46" -> 45); the review table
+  in `/admin-pool` shows a `market` column if anything needs fixing by
+  hand, most likely that midpoint if a week's gap ever isn't a clean 2.
+- **Scoring** (`refresh.js`): a spread game compares `favScore - dogScore`
+  against the spread; a total game compares `favScore + dogScore` (the
+  game's actual combined score) against the midpoint instead. Same push
+  rule either way -- landing exactly on the line scores 0 for everyone;
+  `'favorite'` on a total game means the over side covered.
+- **Display**: everywhere a pick is shown to a player (the picks page,
+  both standings pages), a total game shows "Over N" / "Under N" -- the
+  real team names underneath are purely an implementation detail for
+  fetching the score, never shown as the thing being picked.
+
+Some numbers on a sheet carry a letter prefix instead of a plain digit
+("T1.", "T2." for early Wednesday/Thursday games; "M1.", "M2." for
+Monday's) -- these are still real, pickable games, just numbered in
+their own separate sequence on the sheet; the parser keeps them from
+colliding with the plain-numbered games internally, no action needed.
 
 ## Notes on the design
 

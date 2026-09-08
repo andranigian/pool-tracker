@@ -172,14 +172,22 @@ function renderBoard(data) {
 
 function weekPicksTable(picks) {
   const sorted = [...picks].sort((a, b) => b.points - a.points);
-  let html = '<table class="week"><thead><tr><th>Pts</th><th>Pick</th><th>Spread</th><th>Score</th><th>Result</th></tr></thead><tbody>';
+  let html = '<table class="week"><thead><tr><th>Pts</th><th>Pick</th><th>Line</th><th>Score</th><th>Result</th></tr></thead><tbody>';
   sorted.forEach(p => {
-    const pickName = p.side === "favorite" ? p.favorite : p.underdog;
+    // market='total': favorite/underdog hold the real underlying game's
+    // teams (for ESPN lookup), not "Over"/"Under" -- so the pick label and
+    // line shown here are derived from the market instead, same idea as
+    // index.html's sideLabels().
+    const isTotal = p.market === "total";
+    const pickName = isTotal
+      ? (p.side === "favorite" ? "Over " + (p.spread + 1) : "Under " + (p.spread - 1))
+      : (p.side === "favorite" ? p.favorite : p.underdog);
+    const lineText = isTotal ? "O/U " + (p.spread - 1) + "/" + (p.spread + 1) : "+" + p.spread;
     const resultText = p.result === "pending" ? "pending" : (p.result === "win" ? "won (+" + p.earned + ")" : "lost");
     // Always favorite-then-underdog, regardless of which side was picked --
     // same fixed order the Favorite/Underdog columns use everywhere else.
     const scoreText = p.favScore != null && p.dogScore != null ? p.favScore + "–" + p.dogScore : "—";
-    html += `<tr><td>${p.points}</td><td>${esc(pickName)}</td><td>+${p.spread}</td><td>${scoreText}</td><td class="result-${p.result}">${resultText}</td></tr>`;
+    html += `<tr><td>${p.points}</td><td>${esc(pickName)}</td><td>${lineText}</td><td>${scoreText}</td><td class="result-${p.result}">${resultText}</td></tr>`;
   });
   html += "</tbody></table>";
   return html;

@@ -44,6 +44,9 @@ export async function onRequestPost(context) {
     for (const g of games) {
       if (!g.favorite || !g.underdog) return json({ error: "every game needs a favorite and an underdog" }, 400);
       if (!Number.isFinite(parseFloat(g.spread))) return json({ error: "every game needs a numeric spread" }, 400);
+      if (g.market && g.market !== "spread" && g.market !== "total") {
+        return json({ error: "market must be 'spread' or 'total'" }, 400);
+      }
     }
 
     const sheetNumbers = games.map((g, i) => parseInt(g.sheetNumber, 10) || i + 1);
@@ -53,11 +56,13 @@ export async function onRequestPost(context) {
         `INSERT INTO weeks (id, season, week_number, label, deadline) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET season=excluded.season, week_number=excluded.week_number, label=excluded.label, deadline=excluded.deadline`
       ).bind(weekId, season, weekNumber, week.label || null, deadline.toISOString()),
+      // market defaults to 'spread' -- covers both older clients that never
+      // sent it and rows added by hand via "+ Add game".
       ...games.map((g, i) =>
         env.PICKS.prepare(
-          `INSERT INTO games (week_id, sheet_number, favorite, underdog, spread) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(week_id, sheet_number) DO UPDATE SET favorite=excluded.favorite, underdog=excluded.underdog, spread=excluded.spread`
-        ).bind(weekId, sheetNumbers[i], g.favorite.trim(), g.underdog.trim(), parseFloat(g.spread))
+          `INSERT INTO games (week_id, sheet_number, market, favorite, underdog, spread) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(week_id, sheet_number) DO UPDATE SET market=excluded.market, favorite=excluded.favorite, underdog=excluded.underdog, spread=excluded.spread`
+        ).bind(weekId, sheetNumbers[i], g.market === "total" ? "total" : "spread", g.favorite.trim(), g.underdog.trim(), parseFloat(g.spread))
       ),
       // Only drop games no longer in this save (e.g. removed during
       // review) -- everything else keeps its id/status/winner_side.

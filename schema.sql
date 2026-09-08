@@ -22,11 +22,16 @@ CREATE TABLE IF NOT EXISTS games (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   week_id      TEXT NOT NULL REFERENCES weeks(id),
   sheet_number INTEGER NOT NULL,                -- the pair's number on the sheet
-  favorite     TEXT NOT NULL,
-  underdog     TEXT NOT NULL,
-  spread       REAL NOT NULL,                    -- points the underdog gets
+  market       TEXT NOT NULL DEFAULT 'spread',   -- 'spread' (favorite/underdog) | 'total' (over/under)
+  favorite     TEXT NOT NULL,                    -- for market='total', the real favorite team of the
+  underdog     TEXT NOT NULL,                    -- underlying game -- NOT "Over"/"Under" -- so ESPN score
+                                                   -- lookup (by team name) works identically either way
+  spread       REAL NOT NULL,                    -- market='spread': points the underdog gets.
+                                                   -- market='total': the midpoint of the two posted lines
+                                                   -- (under = spread-1, over = spread+1) -- see refresh.js
   status       TEXT NOT NULL DEFAULT 'scheduled', -- scheduled | in_progress | final | cancelled
-  winner_side  TEXT,                              -- 'favorite' | 'underdog' | 'push' | NULL until final
+  winner_side  TEXT,                              -- 'favorite' | 'underdog' | 'push' | NULL until final --
+                                                   -- for market='total', 'favorite' means over covers
   fav_score    INTEGER,                            -- favorite's raw score, set by refresh.js -- NULL until any score is known
   dog_score    INTEGER,                            -- underdog's raw score, same timing as fav_score
   UNIQUE(week_id, sheet_number)

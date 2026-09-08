@@ -26,7 +26,7 @@ export async function onRequestGet(context) {
     let games;
     try {
       const res = await env.PICKS.prepare(
-        `SELECT id, sheet_number, favorite, underdog, spread, status, winner_side, fav_score, dog_score FROM games WHERE week_id = ? ORDER BY sheet_number`
+        `SELECT id, sheet_number, market, favorite, underdog, spread, status, winner_side, fav_score, dog_score FROM games WHERE week_id = ? ORDER BY sheet_number`
       ).bind(week.id).all();
       games = res.results || [];
     } catch (e) {

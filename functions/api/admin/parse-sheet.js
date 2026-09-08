@@ -7,21 +7,32 @@
 // Ported from the hyedad version of this pool (league-tracker's
 // pool-parse.js) -- same general sheet shape, same parsing rules, just
 // gated by this site's own admin cookie instead of a shared hyedad login.
-// Column shape (0-indexed, header:1 array-of-arrays):
-//   col 0 = favorite's number, e.g. "1."    col 1 = favorite name
-//   then, somewhere later in the same row: the underdog's own number
-//   (e.g. "2."), its name in the next column, and eventually a spread
-//   like "+2" -- found by SCANNING rather than fixed column indices,
-//   because the exact spacing shifts week to week (the sheet's own
-//   side leaderboard grows/shrinks the gap between the favorite and
-//   underdog columns). Week 1's sheet had the underdog at col 8/name at
-//   col 9/spread at col 15; week 2's had them at col 5/6/10 instead --
-//   same layout otherwise, just narrower this week.
-// Rows whose "team" name is UNDER/OVER are total-points props, not a
-// favorite/underdog game, and are skipped -- this pool only supports
-// picking a side against a spread. Rows numbered "T1.", "T2." etc (early
-// Wed/Thu games) don't match the plain-digit pattern and are skipped too;
-// see admin-pool's own note about those needing a separate early pick.
+//
+// Two kinds of row, both favorite-number/favorite-name in col 0/1 then
+// underdog-number/underdog-name somewhere later in the same row (found by
+// SCANNING, not a fixed column -- the exact spacing shifts week to week
+// depending on how wide the sheet's own side leaderboard is that week):
+//   - market='spread': a normal favorite-vs-underdog game. The spread
+//     ("+2") is scanned for after the underdog's name.
+//   - market='total': the "team" names are literally UNDER/OVER -- an
+//     over/under prop on the total combined score of the MOST RECENT
+//     market='spread' row above it (that's how the sheet lays them out,
+//     immediately under their game). Its favorite/underdog are set to
+//     that real game's actual teams -- NOT the strings "Over"/"Under" --
+//     so ESPN score lookup (by team name, in refresh.js's caller) works
+//     identically for both markets. The two lines the sheet prints
+//     (e.g. "UNDER 44" / "OVER 46", always exactly 2 apart in practice)
+//     sit right after each label, not after the underdog like a normal
+//     spread, and as plain numbers rather than "+N" text -- spread is
+//     stored as their midpoint (45); see refresh.js for how a push
+//     exactly on that midpoint is scored the same way a spread push is.
+//
+// Some numbers carry a letter prefix ("T1.", "T2." for early Wed/Thu
+// games; "M1.", "M2." for Monday's) instead of a plain digit -- still
+// real rows, just numbered in their own separate sequence, so their
+// internal sheetNumber gets a large per-letter offset to avoid colliding
+// with the plain-numbered games (see sheetNumberFor()).
+//
 // A day-of-week header ("Saturday, September 5th") appears in its own row
 // and applies to every game row until the next one. The week/season are
 // read from the uploaded filename's "25W1T"/"26W1T"-style convention
@@ -79,11 +90,31 @@ export async function onRequestPost(context) {
 }
 
 const DAY_RE = /^(Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday|Friday),/;
-const NUM_RE = /^(\d{1,3})\.$/;
+const GAME_NUM_RE = /^([A-Za-z]{0,2})(\d{1,3})\.$/; // "1." | "T1." | "M12."
+const NUMERIC_RE = /^\+?\d+(\.\d+)?$/;
+
+// Accepts either a "+2"-style text cell or a bare numeric cell (the total
+// lines on a market='total' row are plain numbers, not "+N" text).
+function numericValue(c) {
+  if (typeof c === "number" && Number.isFinite(c)) return c;
+  if (typeof c === "string" && NUMERIC_RE.test(c.trim())) return parseFloat(c.replace("+", ""));
+  return null;
+}
+
+// Plain numbers keep their natural sheetNumber; a lettered prefix ("T","M")
+// gets its own block, offset well clear of the plain range, so "T1."
+// can't collide with plain "1." as a week's games grow.
+function sheetNumberFor(prefix, num) {
+  const base = Math.ceil(num / 2);
+  if (!prefix) return base;
+  return (prefix.toUpperCase().charCodeAt(0) - 64) * 1000 + base;
+}
 
 function parsePoolSheet(rows) {
   let weekNumber = null;
   let currentDay = null;
+  let lastSpreadTeams = null; // { favorite, underdog } of the most recent market='spread' row
+
   const games = [];
 
   for (const row of rows) {
@@ -103,9 +134,10 @@ function parsePoolSheet(rows) {
 
     const favNumRaw = row[0], favName = row[1];
     if (typeof favNumRaw !== "string" || typeof favName !== "string") continue;
-    const favM = favNumRaw.trim().match(NUM_RE);
-    if (!favM) continue; // e.g. "T1." (early Wed/Thu game) -- not a plain number
-    const favNum = parseInt(favM[1], 10);
+    const favM = favNumRaw.trim().match(GAME_NUM_RE);
+    if (!favM) continue;
+    const favPrefix = favM[1] || "";
+    const favNum = parseInt(favM[2], 10);
 
     // The underdog's own number/name pair is somewhere later in the same
     // row -- find it by scanning instead of assuming a fixed column, since
@@ -113,34 +145,64 @@ function parsePoolSheet(rows) {
     let dogCol = -1;
     for (let i = 2; i < row.length; i++) {
       const c = row[i];
-      if (typeof c === "string" && NUM_RE.test(c.trim())) { dogCol = i; break; }
+      if (typeof c === "string" && GAME_NUM_RE.test(c.trim())) { dogCol = i; break; }
     }
     if (dogCol === -1) continue;
-    const dogNum = parseInt(row[dogCol].trim().match(NUM_RE)[1], 10);
+    const dogM = row[dogCol].trim().match(GAME_NUM_RE);
+    const dogPrefix = dogM[1] || "";
+    const dogNum = parseInt(dogM[2], 10);
     const dogName = row[dogCol + 1];
     if (typeof dogName !== "string") continue;
-    if (dogNum !== favNum + 1) continue; // pairing looks off -- admin re-enters by hand
+    if (dogPrefix !== favPrefix || dogNum !== favNum + 1) continue; // pairing looks off -- admin re-enters by hand
 
-    // Total-points props ("UNDER"/"OVER") aren't a favorite/underdog game
-    // -- this pool only supports picking a side against a spread.
-    if (/^(UNDER|OVER)$/i.test(favName.trim()) || /^(UNDER|OVER)$/i.test(dogName.trim())) continue;
+    const isTotal = /^(UNDER|OVER)$/i.test(favName.trim()) && /^(UNDER|OVER)$/i.test(dogName.trim());
 
-    // The spread is somewhere after the underdog's name -- same
-    // "scan forward" reasoning as above. Stop at the first non-empty cell
-    // so this can't skip past unrelated columns (like a side leaderboard)
-    // and pick up some other section's number as if it were the spread.
-    let spread = null;
-    for (let i = dogCol + 2; i < row.length; i++) {
-      const c = row[i];
-      if (c == null) continue;
-      if (typeof c === "string" && /^\+?\d+(\.\d+)?$/.test(c.trim())) spread = parseFloat(c.replace("+", ""));
-      break;
+    let market, favorite, underdog, spread;
+    if (isTotal) {
+      market = "total";
+      if (!lastSpreadTeams) continue; // no real matchup above it to attribute this to
+      favorite = lastSpreadTeams.favorite;
+      underdog = lastSpreadTeams.underdog;
+
+      // The under/over lines sit right after each label (favName+2,
+      // dogName+2), not after the underdog like a normal spread, and are
+      // plain numbers rather than "+N" text.
+      let underLine = null, overLine = null;
+      for (let i = 2; i < dogCol; i++) { const v = numericValue(row[i]); if (v != null) { underLine = v; break; } }
+      for (let i = dogCol + 2; i < row.length; i++) {
+        const c = row[i];
+        if (c == null) continue;
+        overLine = numericValue(c);
+        break;
+      }
+      spread = underLine != null && overLine != null ? (underLine + overLine) / 2
+        : overLine != null ? overLine - 1
+        : underLine != null ? underLine + 1
+        : null; // admin fills this in by hand in the review table
+    } else {
+      market = "spread";
+      favorite = favName.trim();
+      underdog = dogName.trim();
+      lastSpreadTeams = { favorite, underdog };
+
+      // The spread is somewhere after the underdog's name -- same
+      // "scan forward" reasoning as above. Stop at the first non-empty
+      // cell so this can't skip past unrelated columns (like a side
+      // leaderboard) and pick up some other section's number instead.
+      spread = null;
+      for (let i = dogCol + 2; i < row.length; i++) {
+        const c = row[i];
+        if (c == null) continue;
+        spread = numericValue(c);
+        break;
+      }
     }
 
     games.push({
-      sheetNumber: Math.ceil(favNum / 2),
-      favorite: favName.trim(),
-      underdog: dogName.trim(),
+      sheetNumber: sheetNumberFor(favPrefix, favNum),
+      market,
+      favorite,
+      underdog,
       spread,
       dayLabel: currentDay
     });

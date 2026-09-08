@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
 
     const placeholders = ids.map(() => "?").join(",");
     const gamesRes = await env.PICKS.prepare(
-      `SELECT id, spread, status, fav_score, dog_score FROM games WHERE id IN (${placeholders}) AND status != 'cancelled'`
+      `SELECT id, market, spread, status, fav_score, dog_score FROM games WHERE id IN (${placeholders}) AND status != 'cancelled'`
     ).bind(...ids).all();
     const byId = new Map((gamesRes.results || []).map(g => [g.id, g]));
 
@@ -71,8 +71,14 @@ export async function onRequestPost(context) {
 
       let winnerSide = null;
       if (newStatus === "final") {
-        const favMargin = favScore - dogScore;
-        winnerSide = favMargin > game.spread ? "favorite" : favMargin < game.spread ? "underdog" : "push";
+        // market='spread': the usual favorite-minus-underdog margin,
+        // compared against the spread. market='total': the SUM of both
+        // scores (the game's actual combined total) compared against the
+        // line's midpoint instead -- "favorite" here means the over side
+        // covered, "underdog" means under did, same push-on-exact-tie rule.
+        const isTotal = game.market === "total";
+        const margin = isTotal ? (favScore + dogScore) - game.spread : favScore - dogScore - game.spread;
+        winnerSide = margin > 0 ? "favorite" : margin < 0 ? "underdog" : "push";
       }
       writes.push(
         env.PICKS.prepare(`UPDATE games SET status = ?, winner_side = ?, fav_score = ?, dog_score = ? WHERE id = ?`)
