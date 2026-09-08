@@ -5,12 +5,23 @@
 // via /api/admin/save-week.
 //
 // Ported from the hyedad version of this pool (league-tracker's
-// pool-parse.js) -- same sheet layout, same parsing rules, just gated by
-// this site's own admin cookie instead of a shared hyedad login. Fixed
-// column shape observed in the sheet (0-indexed, header:1 array-of-arrays):
-//   col 0  = favorite's number, e.g. "1."      col 1 = favorite name
-//   col 8  = underdog's number, e.g. "2."      col 9 = underdog name
-//   col 15 = spread on the underdog, e.g. "+2"
+// pool-parse.js) -- same general sheet shape, same parsing rules, just
+// gated by this site's own admin cookie instead of a shared hyedad login.
+// Column shape (0-indexed, header:1 array-of-arrays):
+//   col 0 = favorite's number, e.g. "1."    col 1 = favorite name
+//   then, somewhere later in the same row: the underdog's own number
+//   (e.g. "2."), its name in the next column, and eventually a spread
+//   like "+2" -- found by SCANNING rather than fixed column indices,
+//   because the exact spacing shifts week to week (the sheet's own
+//   side leaderboard grows/shrinks the gap between the favorite and
+//   underdog columns). Week 1's sheet had the underdog at col 8/name at
+//   col 9/spread at col 15; week 2's had them at col 5/6/10 instead --
+//   same layout otherwise, just narrower this week.
+// Rows whose "team" name is UNDER/OVER are total-points props, not a
+// favorite/underdog game, and are skipped -- this pool only supports
+// picking a side against a spread. Rows numbered "T1.", "T2." etc (early
+// Wed/Thu games) don't match the plain-digit pattern and are skipped too;
+// see admin-pool's own note about those needing a separate early pick.
 // A day-of-week header ("Saturday, September 5th") appears in its own row
 // and applies to every game row until the next one. The week/season are
 // read from the uploaded filename's "25W1T"/"26W1T"-style convention
@@ -91,22 +102,40 @@ function parsePoolSheet(rows) {
     if (dayCell) currentDay = dayCell.trim();
 
     const favNumRaw = row[0], favName = row[1];
-    const dogNumRaw = row[8], dogName = row[9];
-    const spreadRaw = row[15];
-
-    if (typeof favNumRaw !== "string" || typeof dogNumRaw !== "string") continue;
+    if (typeof favNumRaw !== "string" || typeof favName !== "string") continue;
     const favM = favNumRaw.trim().match(NUM_RE);
-    const dogM = dogNumRaw.trim().match(NUM_RE);
-    if (!favM || !dogM) continue;
-    if (typeof favName !== "string" || typeof dogName !== "string") continue;
-
+    if (!favM) continue; // e.g. "T1." (early Wed/Thu game) -- not a plain number
     const favNum = parseInt(favM[1], 10);
-    const dogNum = parseInt(dogM[1], 10);
+
+    // The underdog's own number/name pair is somewhere later in the same
+    // row -- find it by scanning instead of assuming a fixed column, since
+    // the gap varies week to week (see header comment).
+    let dogCol = -1;
+    for (let i = 2; i < row.length; i++) {
+      const c = row[i];
+      if (typeof c === "string" && NUM_RE.test(c.trim())) { dogCol = i; break; }
+    }
+    if (dogCol === -1) continue;
+    const dogNum = parseInt(row[dogCol].trim().match(NUM_RE)[1], 10);
+    const dogName = row[dogCol + 1];
+    if (typeof dogName !== "string") continue;
     if (dogNum !== favNum + 1) continue; // pairing looks off -- admin re-enters by hand
 
-    const spread = typeof spreadRaw === "string" && /^\+?\d+(\.\d+)?$/.test(spreadRaw.trim())
-      ? parseFloat(spreadRaw.replace("+", ""))
-      : null;
+    // Total-points props ("UNDER"/"OVER") aren't a favorite/underdog game
+    // -- this pool only supports picking a side against a spread.
+    if (/^(UNDER|OVER)$/i.test(favName.trim()) || /^(UNDER|OVER)$/i.test(dogName.trim())) continue;
+
+    // The spread is somewhere after the underdog's name -- same
+    // "scan forward" reasoning as above. Stop at the first non-empty cell
+    // so this can't skip past unrelated columns (like a side leaderboard)
+    // and pick up some other section's number as if it were the spread.
+    let spread = null;
+    for (let i = dogCol + 2; i < row.length; i++) {
+      const c = row[i];
+      if (c == null) continue;
+      if (typeof c === "string" && /^\+?\d+(\.\d+)?$/.test(c.trim())) spread = parseFloat(c.replace("+", ""));
+      break;
+    }
 
     games.push({
       sheetNumber: Math.ceil(favNum / 2),
