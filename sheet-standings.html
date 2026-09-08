@@ -191,7 +191,10 @@ function weekPicksTable(picks) {
     const pickName = isTotal
       ? (p.side === "favorite" ? "Over " + (p.spread + 1) : "Under " + (p.spread - 1))
       : (p.side === "favorite" ? p.favorite : p.underdog);
-    const lineText = isTotal ? "O/U " + (p.spread - 1) + "/" + (p.spread + 1) : "+" + p.spread;
+    // A favorite is MINUS the spread, not plus -- this used to always show
+    // "+N" regardless of side, which is only correct for the underdog.
+    const lineText = isTotal ? "O/U " + (p.spread - 1) + "/" + (p.spread + 1)
+      : (p.side === "favorite" ? "-" : "+") + p.spread;
     const resultText = p.result === "pending" ? "pending" : (p.result === "win" ? "won (+" + p.earned + ")" : "lost");
     // Always favorite-then-underdog, regardless of which side was picked --
     // same fixed order the Favorite/Underdog columns use everywhere else.
