@@ -50,6 +50,9 @@ export async function onRequestPost(context) {
     }
 
     const sheetNumbers = games.map((g, i) => parseInt(g.sheetNumber, 10) || i + 1);
+    // Falls back to the internal sheetNumber (stringified) for older
+    // clients/rows that never set a label -- still better than nothing.
+    const sheetLabels = games.map((g, i) => (g.sheetLabel != null && String(g.sheetLabel).trim()) || String(sheetNumbers[i]));
     const placeholders = sheetNumbers.map(() => "?").join(",");
     const statements = [
       env.PICKS.prepare(
@@ -60,9 +63,9 @@ export async function onRequestPost(context) {
       // sent it and rows added by hand via "+ Add game".
       ...games.map((g, i) =>
         env.PICKS.prepare(
-          `INSERT INTO games (week_id, sheet_number, market, favorite, underdog, spread) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(week_id, sheet_number) DO UPDATE SET market=excluded.market, favorite=excluded.favorite, underdog=excluded.underdog, spread=excluded.spread`
-        ).bind(weekId, sheetNumbers[i], g.market === "total" ? "total" : "spread", g.favorite.trim(), g.underdog.trim(), parseFloat(g.spread))
+          `INSERT INTO games (week_id, sheet_number, sheet_label, market, favorite, underdog, spread) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(week_id, sheet_number) DO UPDATE SET sheet_label=excluded.sheet_label, market=excluded.market, favorite=excluded.favorite, underdog=excluded.underdog, spread=excluded.spread`
+        ).bind(weekId, sheetNumbers[i], sheetLabels[i], g.market === "total" ? "total" : "spread", g.favorite.trim(), g.underdog.trim(), parseFloat(g.spread))
       ),
       // Only drop games no longer in this save (e.g. removed during
       // review) -- everything else keeps its id/status/winner_side.

@@ -197,6 +197,20 @@ Every existing game defaults to `'spread'` (unaffected); the next games
 sheet you upload will parse over/under rows as `market='total'` on its
 own from there.
 
+### If you already deployed before sheet_label existed
+
+`schema.sql` adds a `sheet_label` column to `games` for a brand-new
+database -- an existing database needs it added by hand too, once:
+
+```
+npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN sheet_label TEXT"
+```
+
+Existing games will show a `#` fallback built from their internal
+`sheet_number` until you re-save that week's sheet through admin-pool,
+after which `sheet_label` gets filled in with the number actually
+printed there.
+
 ## Over/under picks
 
 Some pool sheets carry a "total" prop -- UNDER/OVER on a game's combined

@@ -235,7 +235,12 @@ function updateBar() {
   document.getElementById("picksNumberLine").textContent = entries.length
     ? entries.map(([gameId, p]) => {
         const g = games.find(x => String(x.id) === String(gameId));
-        return p.points + ":" + (g ? "#" + g.sheetNumber : "?");
+        // sheetLabel is the number actually printed on the paper sheet
+        // (e.g. "5" or "T1") -- sheetNumber is only an internal ordering
+        // key and, for lettered games, isn't what's printed there. Fall
+        // back to it only for old data saved before sheetLabel existed.
+        const label = g && (g.sheetLabel || g.sheetNumber);
+        return p.points + ":" + (label != null ? "#" + label : "?");
       }).join("  ")
     : "";
 }
@@ -247,7 +252,7 @@ async function loadWeek() {
     const data = await res.json();
     if (!res.ok || !data.week) { setStatus(weekStatus, "info", "No pool week is open right now — check back once the admin posts one."); games = []; renderGames(); updateBar(); return; }
     currentWeek = data.week;
-    games = data.games.map(g => ({ id: g.id, sheetNumber: g.sheet_number, market: g.market, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
+    games = data.games.map(g => ({ id: g.id, sheetNumber: g.sheet_number, sheetLabel: g.sheet_label, market: g.market, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
 
     deadlinePassed = Date.now() > Date.parse(currentWeek.deadline);
     setStatus(weekStatus, deadlinePassed ? "warn" : "ok",

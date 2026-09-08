@@ -200,6 +200,12 @@ function parsePoolSheet(rows) {
 
     games.push({
       sheetNumber: sheetNumberFor(favPrefix, favNum),
+      // The actual number printed on the sheet for this game's first row
+      // (e.g. "5" or "T1") -- sheetNumber above is an internal ordering
+      // key only, and for lettered games it's a different number than
+      // what's printed, so a player can't use it to find the game on
+      // their own paper sheet. This is what gets shown to them instead.
+      sheetLabel: favPrefix + favNum,
       market,
       favorite,
       underdog,

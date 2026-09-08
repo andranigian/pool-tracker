@@ -211,7 +211,7 @@ function renderGames() {
 }
 
 document.getElementById("addRowBtn").addEventListener("click", () => {
-  gameRows.push({ sheetNumber: gameRows.length + 1, market: "spread", dayLabel: "", favorite: "", underdog: "", spread: "" });
+  gameRows.push({ sheetNumber: gameRows.length + 1, sheetLabel: String(gameRows.length + 1), market: "spread", dayLabel: "", favorite: "", underdog: "", spread: "" });
   renderGames();
 });
 

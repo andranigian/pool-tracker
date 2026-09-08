@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS weeks (
 CREATE TABLE IF NOT EXISTS games (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   week_id      TEXT NOT NULL REFERENCES weeks(id),
-  sheet_number INTEGER NOT NULL,                -- the pair's number on the sheet
+  sheet_number INTEGER NOT NULL,                -- internal ordering/uniqueness key -- for lettered
+                                                   -- games this is NOT the number printed on the sheet
+                                                   -- (see sheet_label for that)
+  sheet_label  TEXT,                              -- the actual number printed on the sheet for this
+                                                   -- game's first row, e.g. '5' or 'T1' -- what a player
+                                                   -- should look for on their paper sheet to find this pick
   market       TEXT NOT NULL DEFAULT 'spread',   -- 'spread' (favorite/underdog) | 'total' (over/under)
   favorite     TEXT NOT NULL,                    -- for market='total', the real favorite team of the
   underdog     TEXT NOT NULL,                    -- underlying game -- NOT "Over"/"Under" -- so ESPN score
