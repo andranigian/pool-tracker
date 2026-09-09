@@ -166,6 +166,21 @@ function sideLabels(g) {
   return { favMain: g.favorite, favSub: "Favorite", dogMain: g.underdog + " +" + g.spread, dogSub: "Underdog" };
 }
 
+// Which printed sheet number identifies a given pick depends on BOTH
+// which side was picked AND the market -- sheetLabel is always the
+// sheet's first row for this game (the favorite's row for a spread game,
+// the UNDER row for a total game) and dogLabel the second (underdog /
+// OVER). A spread pick on the favorite is naturally the first row, but a
+// total pick on "Over" (side='favorite' -- see sideLabels() above) is
+// the SECOND (OVER) row, so the market swaps which of the two applies.
+function labelForPick(g, side) {
+  if (!g) return null;
+  const favLbl = g.sheetLabel || g.sheetNumber;
+  const dogLbl = g.dogLabel || g.sheetNumber;
+  if (g.market === "total") return side === "favorite" ? dogLbl : favLbl;
+  return side === "favorite" ? favLbl : dogLbl;
+}
+
 function renderGames() {
   const list = document.getElementById("gamesList");
   list.innerHTML = "";
@@ -235,11 +250,7 @@ function updateBar() {
   document.getElementById("picksNumberLine").textContent = entries.length
     ? entries.map(([gameId, p]) => {
         const g = games.find(x => String(x.id) === String(gameId));
-        // sheetLabel is the number actually printed on the paper sheet
-        // (e.g. "5" or "T1") -- sheetNumber is only an internal ordering
-        // key and, for lettered games, isn't what's printed there. Fall
-        // back to it only for old data saved before sheetLabel existed.
-        const label = g && (g.sheetLabel || g.sheetNumber);
+        const label = labelForPick(g, p.side);
         return p.points + ":" + (label != null ? "#" + label : "?");
       }).join("  ")
     : "";
@@ -252,7 +263,7 @@ async function loadWeek() {
     const data = await res.json();
     if (!res.ok || !data.week) { setStatus(weekStatus, "info", "No pool week is open right now — check back once the admin posts one."); games = []; renderGames(); updateBar(); return; }
     currentWeek = data.week;
-    games = data.games.map(g => ({ id: g.id, sheetNumber: g.sheet_number, sheetLabel: g.sheet_label, market: g.market, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
+    games = data.games.map(g => ({ id: g.id, sheetNumber: g.sheet_number, sheetLabel: g.sheet_label, dogLabel: g.sheet_label_dog, market: g.market, favorite: g.favorite, underdog: g.underdog, spread: g.spread, status: g.status, winnerSide: g.winner_side, favScore: g.fav_score, dogScore: g.dog_score, dayLabel: null }));
 
     deadlinePassed = Date.now() > Date.parse(currentWeek.deadline);
     setStatus(weekStatus, deadlinePassed ? "warn" : "ok",

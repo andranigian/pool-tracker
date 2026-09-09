@@ -24,9 +24,16 @@ CREATE TABLE IF NOT EXISTS games (
   sheet_number INTEGER NOT NULL,                -- internal ordering/uniqueness key -- for lettered
                                                    -- games this is NOT the number printed on the sheet
                                                    -- (see sheet_label for that)
-  sheet_label  TEXT,                              -- the actual number printed on the sheet for this
-                                                   -- game's first row, e.g. '5' or 'T1' -- what a player
-                                                   -- should look for on their paper sheet to find this pick
+  sheet_label  TEXT,                              -- the number printed on the sheet for this game's
+                                                   -- FIRST row (the favorite's row for market='spread';
+                                                   -- the UNDER row for market='total') -- e.g. '5' or 'T1'
+  sheet_label_dog TEXT,                            -- the number printed on the sheet for this game's
+                                                   -- SECOND row (the underdog's row for market='spread';
+                                                   -- the OVER row for market='total'). A pick's own label
+                                                   -- is sheet_label when the picked side is on the first
+                                                   -- row (favorite for spread, under for total) and
+                                                   -- sheet_label_dog when it's on the second (underdog /
+                                                   -- over) -- see index.html's labelForPick().
   market       TEXT NOT NULL DEFAULT 'spread',   -- 'spread' (favorite/underdog) | 'total' (over/under)
   favorite     TEXT NOT NULL,                    -- for market='total', the real favorite team of the
   underdog     TEXT NOT NULL,                    -- underlying game -- NOT "Over"/"Under" -- so ESPN score

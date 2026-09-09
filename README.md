@@ -211,6 +211,22 @@ Existing games will show a `#` fallback built from their internal
 after which `sheet_label` gets filled in with the number actually
 printed there.
 
+### If you already deployed before sheet_label_dog existed
+
+A pick's own printed number depends on WHICH side was picked --
+`sheet_label` is always the game's first row (the favorite's row for a
+spread game, the UNDER row for a total game) and a second column,
+`sheet_label_dog`, holds the second row's number (underdog / OVER).
+`schema.sql` adds this column for a brand-new database -- an existing
+one needs it added by hand too, once:
+
+```
+npx wrangler d1 execute pool-tracker --remote --command="ALTER TABLE games ADD COLUMN sheet_label_dog TEXT"
+```
+
+Same deal as above: re-save the week's sheet through admin-pool
+afterward so it gets filled in.
+
 ## Over/under picks
 
 Some pool sheets carry a "total" prop -- UNDER/OVER on a game's combined
