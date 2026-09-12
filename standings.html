@@ -66,7 +66,12 @@ function normTeam(s) {
   // pool sheet) needs to match ESPN's "Louisiana Monroe" (no hyphen), and
   // there's no reason a hyphenated team name should ever need to match
   // literally rather than just word-for-word.
-  return String(s || "").replace(/[.'’]/g, "").replace(/[-\s]+/g, " ").trim().toUpperCase();
+  let t = String(s || "").replace(/[.'’]/g, "").replace(/[-\s]+/g, " ").trim().toUpperCase();
+  // "L.A." collapses to "LA" above, but ESPN's own team fields always
+  // spell it out as "Los Angeles" (both LA teams) -- expand the leading
+  // token so a pick entered as "L.A. Chargers"/"L.A. Rams" still matches.
+  t = t.replace(/^LA\b/, "LOS ANGELES");
+  return t;
 }
 const TEAM_ALIASES = {
   "MISSISSIPPI": "OLE MISS", // ESPN calls Ole Miss by location "Ole Miss", not "Mississippi"
@@ -112,7 +117,11 @@ async function refreshScoresFromESPN(week, games) {
       if (!comp) continue;
       for (const c of comp.competitors || []) {
         const t = c.team || {};
-        for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name]) {
+        // t.displayName is the full "City Mascot" ESPN name (e.g. "Los
+        // Angeles Rams", "New York Giants") -- picks stored with the full
+        // team name (rather than just the city or just the mascot) only
+        // ever match against this field, so it has to be indexed too.
+        for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name, t.displayName]) {
           if (variant) index.set(normTeam(variant), { competition: comp, competitor: c });
         }
       }
