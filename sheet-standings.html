@@ -213,8 +213,8 @@ function renderBoard(data) {
     html += `<tr>
       <td class="rank">${s.displayRank}</td>
       <td>${esc(s.displayName)}</td>
-      <td>${s.seasonTotal}${s.seasonPending ? ' <span class="pending-tag">(pending)</span>' : ""}</td>
-      <td>${s.weekPending ? '<span class="pending-tag">in progress</span>' : s.weekTotal}</td>
+      <td>${s.seasonTotal}${s.seasonPending ? ' <span class="pending-tag">(live)</span>' : ""}</td>
+      <td>${s.weekTotal}${s.weekPending ? ' <span class="pending-tag">(live)</span>' : ""}</td>
       <td>${s.weekPicks.length ? '<details class="week-picks"><summary>picks</summary>' + weekPicksTable(s.weekPicks) + '</details>' : ""}</td>
     </tr>`;
   });
