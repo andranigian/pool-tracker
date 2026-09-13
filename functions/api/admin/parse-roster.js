@@ -15,19 +15,21 @@
 //   col with header "NICKNAME" = nickname
 //   cols with header "10".."1" = the participant's picks for that
 //     confidence value (read dynamically from the header text, in case
-//     the column order/count ever shifts) -- each cell holds the pool
-//     sheet's own raw number for the team they picked (NOT our internal
+//     the column order/count ever shifts -- and matched on the LAST
+//     occurrence of each header value, since some weeks' sheets carry an
+//     earlier win/loss quick-view block that reuses the same "10".."1"
+//     text before the real pick columns) -- each cell holds the pool
+//     sheet's own printed label for the team they picked (e.g. "41", or
+//     "T1"/"M2" for the lettered early/Monday games -- NOT our internal
 //     sheet_number/game id).
 //
-// The pool sheet numbers each team-slot sequentially (favorite = odd, its
-// underdog = the very next even number, e.g. 41/42) and our sheet_number
-// is that pair collapsed to one game index (see parse-sheet.js's header
-// comment) -- so a raw number resolves back to a specific game_id/side via
-// gameId = the game whose sheet_number is ceil(rawNumber/2), side =
-// "favorite" if rawNumber is odd else "underdog". That requires this
-// week's games to already be saved (save-week.js) before a roster upload.
-// A raw number that doesn't match any saved game is reported in
-// `unmatched` for the admin to fix by hand rather than silently dropped.
+// A raw label resolves back to a specific game_id/side by exact match
+// against the sheet_label/sheet_label_dog this week's games were saved
+// with (see save-week.js) -- favorite if it matches sheet_label, underdog
+// if sheet_label_dog. That requires this week's games to already be saved
+// before a roster upload. A raw label that doesn't match any saved game
+// is reported in `unmatched` for the admin to fix by hand rather than
+// silently dropped.
 import { json, requireAdmin } from "../_lib.js";
 import * as XLSX from "../../_vendor/xlsx.bundle.mjs";
 
@@ -64,15 +66,23 @@ export async function onRequestPost(context) {
     const weekRow = await env.PICKS.prepare(`SELECT id, season, week_number, label FROM weeks WHERE id = ?`).bind(weekId).first();
     if (!weekRow) return json({ error: "no week found with that id -- save the games sheet for this week first" }, 400);
 
-    const gamesRes = await env.PICKS.prepare(`SELECT id, sheet_number FROM games WHERE week_id = ?`).bind(weekId).all();
+    const gamesRes = await env.PICKS.prepare(`SELECT id, sheet_number, sheet_label, sheet_label_dog FROM games WHERE week_id = ?`).bind(weekId).all();
     const games = gamesRes.results || [];
     if (!games.length) return json({ error: "this week has no games saved yet -- upload and save the games sheet first" }, 400);
 
-    // rawNumber -> { gameId, side }
+    // rawLabel (trimmed, uppercased -- e.g. "41" or "T1") -> { gameId, side }.
+    // Keyed off the exact printed labels save-week.js stores in
+    // sheet_label/sheet_label_dog, rather than reconstructed from
+    // sheet_number*2±1 -- that reconstruction only worked for
+    // plain-numbered games; it could never match a lettered pick
+    // ("T1"/"T2" for early Wed/Thu games, "M1"/"M2" for Monday's -- see
+    // parse-sheet.js's header comment), since sheet_number for those
+    // carries a large per-letter offset that doesn't invert back to "T1"
+    // via *2±1.
     const byRaw = new Map();
     for (const g of games) {
-      byRaw.set(g.sheet_number * 2 - 1, { gameId: g.id, side: "favorite" });
-      byRaw.set(g.sheet_number * 2, { gameId: g.id, side: "underdog" });
+      if (g.sheet_label != null) byRaw.set(String(g.sheet_label).trim().toUpperCase(), { gameId: g.id, side: "favorite" });
+      if (g.sheet_label_dog != null) byRaw.set(String(g.sheet_label_dog).trim().toUpperCase(), { gameId: g.id, side: "underdog" });
     }
 
     let rows;
@@ -110,14 +120,21 @@ function parseRosterSheet(rows, byRaw) {
   // header text rather than hardcoding indices, so a shifted layout next
   // season doesn't silently misparse.
   let nickCol = -1;
-  const pointCols = []; // [{ col, points }]
+  // points (1..10) -> column index. A sheet can carry an earlier "this
+  // week's result" quick-view block (win/loss letters, added starting
+  // 2026-w2's 26W2S.xlsx) that reuses the same "10".."1" header text
+  // before the real pick columns -- keep the LAST column seen for each
+  // points value so that block gets overwritten by the real one instead
+  // of both ending up in pointCols as duplicates.
+  const pointColByPoints = new Map();
   header.forEach((cell, i) => {
     if (cell == null) return;
     const s = String(cell).trim().toUpperCase();
     if (s === "NICKNAME") { nickCol = i; return; }
     const n = parseInt(s, 10);
-    if (Number.isFinite(n) && n >= 1 && n <= 10 && String(n) === s) pointCols.push({ col: i, points: n });
+    if (Number.isFinite(n) && n >= 1 && n <= 10 && String(n) === s) pointColByPoints.set(n, i);
   });
+  const pointCols = Array.from(pointColByPoints, ([points, col]) => ({ col, points }));
 
   const participants = [];
   const skipped = [];
@@ -138,11 +155,10 @@ function parseRosterSheet(rows, byRaw) {
     for (const { col, points } of pointCols) {
       const cell = row[col];
       if (cell == null || !String(cell).trim()) continue;
-      const rawNumber = parseInt(String(cell).trim(), 10);
-      if (!Number.isFinite(rawNumber)) { unmatched.push({ points, raw: String(cell) }); continue; }
-      const match = byRaw.get(rawNumber);
-      if (!match) { unmatched.push({ points, raw: rawNumber }); continue; }
-      rawPicks.push({ points, rawNumber, gameId: match.gameId, side: match.side });
+      const rawLabel = String(cell).trim().toUpperCase();
+      const match = byRaw.get(rawLabel);
+      if (!match) { unmatched.push({ points, raw: cell }); continue; }
+      rawPicks.push({ points, rawNumber: rawLabel, gameId: match.gameId, side: match.side });
     }
 
     // Same team picked at two different point values -- keep the higher
