@@ -18,6 +18,9 @@
   .sub a { color:#9cc0ff; }
   .week-picker-row { margin-bottom: 10px; display:flex; align-items:center; gap:8px; font-size:.85rem; color:#9aa1ac; }
   .week-picker-row select { background:#1a1d24; border:1px solid #333844; color:#e6e8eb; border-radius:6px; padding:6px 8px; font-size:.85rem; }
+  .sort-toggle-row { margin-bottom: 10px; display:flex; align-items:center; gap:8px; font-size:.85rem; color:#9aa1ac; }
+  .sort-btn { background:#1a1d24; border:1px solid #333844; color:#9cc0ff; border-radius:6px; padding:6px 10px; font-size:.85rem; cursor:pointer; }
+  .sort-btn.active { background:#1a2f52; border-color:#3a6bd8; color:#e6e8eb; font-weight:600; }
   .status { margin: 10px 0; padding:10px 12px; border-radius:6px; font-size:.85rem; line-height:1.4; }
   .status.error { background:#3a1a1a; color:#ff9b9b; }
   .status.ok { background:#123321; color:#8ee6ab; }
@@ -50,6 +53,12 @@
     <select id="weekPicker"><option value="">Loading…</option></select>
   </div>
 
+  <div class="sort-toggle-row">
+    <span>Rank by:</span>
+    <button type="button" class="sort-btn" data-mode="alltime">All-Time</button>
+    <button type="button" class="sort-btn" data-mode="week">Week Live</button>
+  </div>
+
   <div id="weekLabel" class="status info">Loading…</div>
   <div id="boardWrap"></div>
 
@@ -60,6 +69,8 @@
 
 <script>
 const API = "/api";
+let sortMode = "alltime"; // "alltime" | "week" -- which total ranks the table
+let lastData = null; // last successfully loaded /api/sheet-standings payload, so toggling sort doesn't need a refetch
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
@@ -166,8 +177,10 @@ async function refreshScoresFromESPN(week, games) {
 }
 
 function renderBoard(data) {
+  lastData = data; // cached so the sort-mode toggle can re-render without refetching
   const labelEl = document.getElementById("weekLabel");
   const wrap = document.getElementById("boardWrap");
+  updateSortButtons(data.week);
   if (!data.week) {
     labelEl.className = "status info";
     labelEl.textContent = "No pool week is open right now.";
@@ -182,10 +195,23 @@ function renderBoard(data) {
     return;
   }
 
-  let html = '<table class="board"><thead><tr><th class="rank">#</th><th>Name</th><th>Season</th><th>This week</th><th></th></tr></thead><tbody>';
-  data.standings.forEach(s => {
+  // "All-Time" ranks by seasonTotal -- which, despite the name, sums
+  // every week ever recorded for that nickname (sheet-standings.js's
+  // query never filters by season, so this has always secretly been an
+  // all-time total, not a per-season one -- the column is relabelled
+  // below to say so). "Week Live" ranks by this week's own total instead,
+  // so who's actually leading the week in progress doesn't require
+  // scanning the whole all-time list for it.
+  const sorted = [...data.standings].sort((a, b) => {
+    if (sortMode === "week") return b.weekTotal - a.weekTotal || b.seasonTotal - a.seasonTotal || a.displayName.localeCompare(b.displayName);
+    return b.seasonTotal - a.seasonTotal || b.weekTotal - a.weekTotal || a.displayName.localeCompare(b.displayName);
+  });
+  sorted.forEach((s, i) => { s.displayRank = i + 1; });
+
+  let html = '<table class="board"><thead><tr><th class="rank">#</th><th>Name</th><th>All-Time</th><th>This week</th><th></th></tr></thead><tbody>';
+  sorted.forEach(s => {
     html += `<tr>
-      <td class="rank">${s.rank}</td>
+      <td class="rank">${s.displayRank}</td>
       <td>${esc(s.displayName)}</td>
       <td>${s.seasonTotal}${s.seasonPending ? ' <span class="pending-tag">(pending)</span>' : ""}</td>
       <td>${s.weekPending ? '<span class="pending-tag">in progress</span>' : s.weekTotal}</td>
@@ -195,6 +221,21 @@ function renderBoard(data) {
   html += "</tbody></table>";
   wrap.innerHTML = html;
 }
+
+function updateSortButtons(week) {
+  const weekBtn = document.querySelector('.sort-btn[data-mode="week"]');
+  const allBtn = document.querySelector('.sort-btn[data-mode="alltime"]');
+  if (weekBtn) weekBtn.textContent = week ? "Week " + week.weekNumber + " Live" : "Week Live";
+  if (allBtn) allBtn.classList.toggle("active", sortMode === "alltime");
+  if (weekBtn) weekBtn.classList.toggle("active", sortMode === "week");
+}
+
+document.querySelectorAll(".sort-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    sortMode = btn.dataset.mode;
+    if (lastData) renderBoard(lastData);
+  });
+});
 
 function weekPicksTable(picks) {
   const sorted = [...picks].sort((a, b) => b.points - a.points);
