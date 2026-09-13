@@ -101,36 +101,52 @@ async function refreshScoresFromESPN(week, games) {
       fetch("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=" + dateRange + "&limit=300"),
       fetch("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=" + dateRange + "&limit=100")
     ]);
-    const events = [];
+    // Kept as SEPARATE per-sport indices rather than one merged map --
+    // "Pittsburgh", "Washington", "Tennessee", "Minnesota", "Arizona",
+    // "Buffalo" etc. each name BOTH an NFL team and a college team, so
+    // merging both sports into one map means whichever sport got indexed
+    // last always wins that key -- silently resolving a college pick to
+    // the NFL team of the same name instead, which then never shares a
+    // competition with its real opponent and stays unmatched forever.
+    const indexes = [];
     for (const res of espnResults) {
       if (!res.ok) continue;
       const data = await res.json();
-      events.push(...(data.events || []));
-    }
-    if (!events.length) return false;
-
-    const index = new Map();
-    for (const ev of events) {
-      const comp = ev.competitions && ev.competitions[0];
-      if (!comp) continue;
-      for (const c of comp.competitors || []) {
-        const t = c.team || {};
-        for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name]) {
-          if (variant) index.set(normTeam(variant), { competition: comp, competitor: c });
+      const events = data.events || [];
+      if (!events.length) continue;
+      const index = new Map();
+      for (const ev of events) {
+        const comp = ev.competitions && ev.competitions[0];
+        if (!comp) continue;
+        for (const c of comp.competitors || []) {
+          const t = c.team || {};
+          for (const variant of [t.location, t.shortDisplayName, t.abbreviation, t.name]) {
+            if (variant) index.set(normTeam(variant), { competition: comp, competitor: c });
+          }
         }
       }
+      indexes.push(index);
     }
+    if (!indexes.length) return false;
 
     const updates = [];
     for (const g of pending) {
-      const fav = lookupTeam(index, g.favorite);
-      const dog = lookupTeam(index, g.underdog);
-      if (!fav || !dog || fav.competition !== dog.competition) continue;
-      const statusType = fav.competition.status.type;
+      // Try each sport's index on its own -- requiring both sides to
+      // resolve within the SAME sport's index (and the SAME competition
+      // there) is what keeps a college matchup from ever being satisfied
+      // by a stray NFL team of the same city/state name, and vice versa.
+      let match = null;
+      for (const index of indexes) {
+        const fav = lookupTeam(index, g.favorite);
+        const dog = lookupTeam(index, g.underdog);
+        if (fav && dog && fav.competition === dog.competition) { match = { fav, dog }; break; }
+      }
+      if (!match) continue;
+      const statusType = match.fav.competition.status.type;
       updates.push({
         gameId: g.id,
-        favScore: parseFloat(fav.competitor.score) || 0,
-        dogScore: parseFloat(dog.competitor.score) || 0,
+        favScore: parseFloat(match.fav.competitor.score) || 0,
+        dogScore: parseFloat(match.dog.competitor.score) || 0,
         completed: !!statusType.completed,
         inProgress: statusType.state === "in"
       });
