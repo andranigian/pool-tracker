@@ -164,7 +164,14 @@ function parsePoolSheet(rows) {
     const dogNum = parseInt(dogM[2], 10);
     const dogName = row[dogCol + 1];
     if (typeof dogName !== "string") continue;
-    if (dogPrefix !== favPrefix || dogNum !== favNum + 1) continue; // pairing looks off -- admin re-enters by hand
+    // The sheet prints "100" as just "00" -- not a typo, its own numbering
+    // convention for wrapping a 3rd digit (confirmed against 26W3T's own
+    // PDF: "99. UNDER 47   00. OVER 49") -- so a dog number that's short
+    // by exactly 100 is accepted as that same wraparound, on top of a
+    // normal exact match.
+    if (dogPrefix !== favPrefix) continue; // pairing looks off -- admin re-enters by hand
+    const expectedDogNum = favNum + 1;
+    if (dogNum !== expectedDogNum && dogNum + 100 !== expectedDogNum) continue; // pairing looks off -- admin re-enters by hand
 
     const isTotal = /^(UNDER|OVER)$/i.test(favName.trim()) && /^(UNDER|OVER)$/i.test(dogName.trim());
 
@@ -219,8 +226,12 @@ function parsePoolSheet(rows) {
       // printed number, dogLabel the SECOND's -- which one a given pick
       // should show depends on the market too (see labelForPick() in
       // index.html), not just which of these two it is.
-      sheetLabel: favPrefix + favNum,
-      dogLabel: dogPrefix + dogNum,
+      // Built from the raw matched digit strings (favM[2]/dogM[2]), not
+      // favNum/dogNum -- dogNum is "00" parsed down to the integer 0,
+      // which would print back as just "0" and no longer match what's
+      // actually on the sheet (or what a roster upload's raw cell says).
+      sheetLabel: favPrefix + favM[2],
+      dogLabel: dogPrefix + dogM[2],
       market,
       favorite,
       underdog,
