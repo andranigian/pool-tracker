@@ -132,18 +132,29 @@ function parsePoolSheet(rows) {
     const dayCell = row.find(c => typeof c === "string" && DAY_RE.test(c.trim()));
     if (dayCell) currentDay = dayCell.trim();
 
-    const favNumRaw = row[0], favName = row[1];
-    if (typeof favNumRaw !== "string" || typeof favName !== "string") continue;
-    const favM = favNumRaw.trim().match(GAME_NUM_RE);
-    if (!favM) continue;
+    // The favorite's own number/name pair used to always sit at columns
+    // 0/1 -- but some weeks' sheets shift the whole game-number grid one
+    // column right (an extra blank leading column, seen starting with
+    // 26W3T.xlsx, which made every row fail to match here and the sheet
+    // parse as zero games). Found by scanning instead, same reasoning as
+    // the underdog pair below.
+    let favCol = -1;
+    for (let i = 0; i < row.length; i++) {
+      const c = row[i];
+      if (typeof c === "string" && GAME_NUM_RE.test(c.trim())) { favCol = i; break; }
+    }
+    if (favCol === -1) continue;
+    const favM = row[favCol].trim().match(GAME_NUM_RE);
     const favPrefix = favM[1] || "";
     const favNum = parseInt(favM[2], 10);
+    const favName = row[favCol + 1];
+    if (typeof favName !== "string") continue;
 
     // The underdog's own number/name pair is somewhere later in the same
     // row -- find it by scanning instead of assuming a fixed column, since
     // the gap varies week to week (see header comment).
     let dogCol = -1;
-    for (let i = 2; i < row.length; i++) {
+    for (let i = favCol + 2; i < row.length; i++) {
       const c = row[i];
       if (typeof c === "string" && GAME_NUM_RE.test(c.trim())) { dogCol = i; break; }
     }
@@ -168,7 +179,7 @@ function parsePoolSheet(rows) {
       // dogName+2), not after the underdog like a normal spread, and are
       // plain numbers rather than "+N" text.
       let underLine = null, overLine = null;
-      for (let i = 2; i < dogCol; i++) { const v = numericValue(row[i]); if (v != null) { underLine = v; break; } }
+      for (let i = favCol + 2; i < dogCol; i++) { const v = numericValue(row[i]); if (v != null) { underLine = v; break; } }
       for (let i = dogCol + 2; i < row.length; i++) {
         const c = row[i];
         if (c == null) continue;
